@@ -1,0 +1,45 @@
+#!/bin/dash
+# 
+# Faster implementation of /etc/xen/scripts/vif-bridge without dependencies. See the original script for 
+# usage.
+
+# Uncomment to log start and stop times (for benchmarking)
+#date "+%H:%M:%S.%N fast-vif-bridge START $vif $1 pid $$" >> /var/log/vif-bridge.log
+#fun_done () {
+#   date "+%H:%M:%S.%N fast-vif-bridge EXIT $vif $1 pid $$" >> /var/log/vif-bridge.log
+#}
+#trap fun_done EXIT
+
+bridge=br0
+mtu=1500 # MTU should match the MTU of $bridge
+command=$1
+
+case "$command" in
+    online)
+        ip link set dev ${vif} down
+        ip link set dev ${vif} address fe:ff:ff:ff:ff:ff || true
+        ip address flush dev ${vif}
+
+        ip link set dev ${vif} mtu ${mtu}
+
+        brctl addif ${bridge} ${vif} # note, no checks to see if it is already on bridge
+        ip link set dev ${vif} up
+            ;;
+
+    offline)
+        brctl delif $bridge $vif 2>/dev/null || true
+        ifconfig $vif down 2>/dev/null || true
+            ;;
+
+    add)
+        ip link set dev ${vif} down
+        ip link set dev ${vif} address fe:ff:ff:ff:ff:ff || true
+        ip address flush dev ${vif}
+
+        ip link set dev ${vif} mtu ${mtu}
+
+        brctl addif ${bridge} ${vif} # note, no checks to see if it is already on bridge
+        ip link set dev ${vif} up
+            ;;
+esac
+
