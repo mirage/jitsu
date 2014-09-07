@@ -1,0 +1,30 @@
+<domain type='xen'>
+  <name>static</name>
+  <!-- low memory = faster startup -->
+  <memory unit='KiB'>32000</memory>
+  <currentMemory unit='KiB'>32000</currentMemory>
+  <vcpu placement='static'>1</vcpu>
+  <os>
+    <type arch='armv7l' machine='xenpv'>linux</type>
+    <!-- replace with kernel -->
+    <kernel>mir-static.xen</kernel>
+    <cmdline> </cmdline>
+  </os>
+  <clock offset='utc' adjustment='reset'/>
+  <on_poweroff>destroy</on_poweroff>
+  <on_reboot>restart</on_reboot>
+  <on_crash>preserve</on_crash>
+  <devices>
+    <interface type='bridge'>
+      <mac address='c0:ff:ee:c0:ff:ff'/>
+      <source bridge='br0'/>
+      <!-- fast-vif-bridge is a faster version of /etc/xen/scripts/vif-bridge, but may need to be edited manually -->
+      <script path='fast-vif-bridge'/>
+    </interface>
+    <console type='pty'>
+      <target type='virtio' port='0'/>
+    </console>
+  </devices>
+</domain>
+
+
