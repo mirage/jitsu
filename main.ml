@@ -119,8 +119,7 @@ let jitsu connstr bindaddr bindport forwarder forwardport response_delay
       )
      >>= fun forward_resolver ->
      printf "Connecting to %s...\n" connstr;
-     Jitsu.create connstr forward_resolver ttl
-     >>= fun t ->
+     let t = Jitsu.create connstr forward_resolver ttl in
      Lwt.choose [(
          (* main thread, DNS server *)
          let triple (dns,ip,name) =

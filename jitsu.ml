@@ -47,12 +47,11 @@ type t = {
 }
 
 let create connstr forward_resolver vm_count =
-  return {
-    db = Loader.new_db ();
+  { db = Loader.new_db ();
     connection = Libvirt.Connect.connect ~name:connstr ();
     forward_resolver = forward_resolver;
     domain_table = Hashtbl.create ~random:true vm_count;
-    name_table = Hashtbl.create ~random:true vm_count}
+    name_table = Hashtbl.create ~random:true vm_count }
 
 (* fallback to external resolver if local lookup fails *)
 let fallback t _class _type _name =

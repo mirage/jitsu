@@ -30,7 +30,7 @@ type vm_stop_mode = VmStopDestroy | VmStopSuspend | VmStopShutdown
 type t
 (** The type of Jitsu states. *)
 
-val create: string -> Dns_resolver_unix.t -> int -> t Lwt.t
+val create: string -> Dns_resolver_unix.t -> int -> t
 (** [create name resolver vm_count] creates a new Jitsu instance. FIXME. *)
 
 val process: t -> Dns.Packet.t Dns_server.process
@@ -39,8 +39,8 @@ val process: t -> Dns.Packet.t Dns_server.process
 
 val add_vm: t -> domain:string -> name:string -> Ipaddr.V4.t -> vm_stop_mode ->
   delay:float -> ttl:int -> unit Lwt.t
-(** [add_vm t domain name ip stop_mode delay ttl] adds a VM to be monitored by jitsu.
-    FIXME. *)
+(** [add_vm t domain name ip stop_mode delay ttl] adds a VM to be
+    monitored by jitsu.  FIXME. *)
 
 val stop_expired_vms: t -> unit
 (** Iterate through the internal VM table and stop VMs that haven't
