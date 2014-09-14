@@ -22,23 +22,28 @@ open Libvirt
 type vm_stop_mode = VmStopDestroy | VmStopSuspend | VmStopShutdown
 
 type vm_metadata = {
-  vm_name : string; (* Unique name of VM. Matches name in libvirt *)
+  vm_name : string;             (* Unique name of VM. Matches name in libvirt *)
   domain : rw Libvirt.Domain.t; (* Libvirt data structure for this VM *)
-  query_response_delay : float; (* in seconds, delay after startup before sending query response *)
-  vm_ttl : int; (* TTL in seconds. VM is stopped [vm_ttl] seconds after [requested_ts] *)
-  how_to_stop : vm_stop_mode; (* how to stop the VM on timeout *)
-  mutable started_ts : int; (* started timestamp *)
-  mutable requested_ts : int; (* last request timestamp *)
+  query_response_delay : float; (* in seconds, delay after startup before
+                                   sending query response *)
+  vm_ttl : int;                 (* TTL in seconds. VM is stopped [vm_ttl]
+                                   seconds after [requested_ts] *)
+  how_to_stop : vm_stop_mode;   (* how to stop the VM on timeout *)
+  mutable started_ts : int;     (* started timestamp *)
+  mutable requested_ts : int;   (* last request timestamp *)
   mutable total_requests : int;
   mutable total_starts : int;
 }
 
 type t = {
-  db : Loader.db; (* DNS database *)
-  connection : rw Libvirt.Connect.t; (* connection to libvirt *)
-  forward_resolver : Dns_resolver_unix.t; (* DNS to forward request to if no local match *)
-  domain_table : (Name.domain_name, vm_metadata) Hashtbl.t; (* vm hash table indexed by domain *)
-  name_table : (string, vm_metadata) Hashtbl.t; (* vm hash table indexed by vm name *)
+  db : Loader.db;                         (* DNS database *)
+  connection : rw Libvirt.Connect.t;      (* connection to libvirt *)
+  forward_resolver : Dns_resolver_unix.t; (* DNS to forward request to if no
+                                             local match *)
+  domain_table : (Name.domain_name, vm_metadata) Hashtbl.t;
+                                          (* vm hash table indexed by domain *)
+  name_table : (string, vm_metadata) Hashtbl.t;
+                                          (* vm hash table indexed by vm name *)
 }
 
 let create connstr forward_resolver vm_count =
@@ -205,7 +210,7 @@ let get_base_domain domain =
   | _ -> raise (Failure "Invalid domain name")
 
 (* add vm to be monitored by jitsu *)
-let add_vm t ~domain:domain_as_string ~name:vm_name vm_ip stop_mode 
+let add_vm t ~domain:domain_as_string ~name:vm_name vm_ip stop_mode
     ~delay:response_delay ~ttl =
   (* check if vm_name exists and set up VM record *)
   let vm_dom = Libvirt.Domain.lookup_by_name t.connection vm_name in
