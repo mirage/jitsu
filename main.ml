@@ -96,8 +96,8 @@ let vm_stop_mode =
      $(b,destroy) and $(b,shutdown). Suspended VMs are generally faster to \
      resume, but require resources to store state. Note that Mirage \
      suspend/resume is currently not supported on ARM." in
-  Arg.(value & opt (enum [("destroy", Jitsu.VmStopDestroy);
-                          ("suspend", Jitsu.VmStopSuspend);
+  Arg.(value & opt (enum [("destroy" , Jitsu.VmStopDestroy);
+                          ("suspend" , Jitsu.VmStopSuspend);
                           ("shutdown", Jitsu.VmStopShutdown)])
          Jitsu.VmStopSuspend & info ["m" ; "mode" ] ~docv:"MODE" ~doc)
 
@@ -125,8 +125,8 @@ let jitsu connstr bindaddr bindport forwarder forwardport response_delay
          (* main thread, DNS server *)
          let triple (dns,ip,name) =
            printf "Adding domain '%s' for VM '%s' with ip %s\n" dns name ip;
-           Jitsu.add_vm t dns name (Ipaddr.V4.of_string_exn ip)
-             vm_stop_mode response_delay ttl
+           Jitsu.add_vm t ~domain:dns ~name (Ipaddr.V4.of_string_exn ip)
+             vm_stop_mode ~delay:response_delay ~ttl
          in
          Lwt_list.iter_p triple map_domain
          >>= fun () ->

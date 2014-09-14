@@ -142,8 +142,8 @@ let print_stats vm =
     vm.vm_name vm.total_requests vm.total_starts vm.started_ts vm.requested_ts
     (vm.requested_ts - vm.started_ts) vm.vm_ttl
 
-(** Process function for ocaml-dns. Starts new VMs from DNS queries or
-    forwards request to a fallback resolver *)
+(* Process function for ocaml-dns. Starts new VMs from DNS queries or
+   forwards request to a fallback resolver *)
 let process t ~src:_ ~dst:_ packet =
   let open Packet in
   match packet.questions with
@@ -178,8 +178,8 @@ let process t ~src:_ ~dst:_ packet =
     end
   | _ -> return_none
 
-(** Add domain SOA record. Called automatically from add_vm if domain
-    is not registered in local DB as a SOA record *)
+(* Add domain SOA record. Called automatically from add_vm if domain
+   is not registered in local DB as a SOA record *)
 let add_soa t soa_domain ttl =
   Loader.add_soa_rr [] []
     (Int32.of_int (int_of_float (Unix.time())))
@@ -205,7 +205,8 @@ let get_base_domain domain =
   | _ -> raise (Failure "Invalid domain name")
 
 (* add vm to be monitored by jitsu *)
-let add_vm t domain_as_string vm_name vm_ip stop_mode response_delay ttl =
+let add_vm t ~domain:domain_as_string ~name:vm_name vm_ip stop_mode 
+    ~delay:response_delay ~ttl =
   (* check if vm_name exists and set up VM record *)
   let vm_dom = Libvirt.Domain.lookup_by_name t.connection vm_name in
   (* check if SOA is registered and domain is ok *)
