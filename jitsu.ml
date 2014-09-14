@@ -133,12 +133,12 @@ let get_vm_metadata_by_name t name =
   with Not_found -> None
 
 let print_stats vm =
-  Lwt_io.printf "VM: %s\n\
-                \ total requests: %d\n\
-                \ total starts: %d\n\
-                \ last start: %d\n\
-                \ last request: %d (%d seconds since started)\n\
-                \ vm ttl: %d\n"
+  printf "VM: %s\n\
+         \ total requests: %d\n\
+         \ total starts: %d\n\
+         \ last start: %d\n\
+         \ last request: %d (%d seconds since started)\n\
+         \ vm ttl: %d\n"
     vm.vm_name vm.total_requests vm.total_starts vm.started_ts vm.requested_ts
     (vm.requested_ts - vm.started_ts) vm.vm_ttl
 
@@ -152,8 +152,8 @@ let process t ~src ~dst packet =
       let answer = Query.(answer q.q_name q.q_type t.db.Loader.trie) in
       match answer.Query.rcode with
       | Packet.NoError ->
-        Lwt_io.printf "Local match for domain %s\n" (Name.domain_name_to_string q.q_name)
-        >>= fun () ->
+        printf "Local match for domain %s\n"
+          (Name.domain_name_to_string q.q_name);
         (* look for vm in hash table *)
         let vm = get_vm_metadata_by_domain t q.q_name in
         begin match vm with
