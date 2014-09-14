@@ -41,7 +41,7 @@ type t = {
   name_table : (string, vm_metadata) Hashtbl.t; (* vm hash table indexed by vm name *)
 }
 
-let create connstr forward_resolver how_to_stop vm_count =
+let create connstr forward_resolver vm_count =
   return {
     db = Loader.new_db ();
     connection = Libvirt.Connect.connect ~name:connstr ();
@@ -144,7 +144,7 @@ let print_stats vm =
 
 (** Process function for ocaml-dns. Starts new VMs from DNS queries or
     forwards request to a fallback resolver *)
-let process t ~src ~dst packet =
+let process t ~src:_ ~dst:_ packet =
   let open Packet in
   match packet.questions with
   | [] -> return_none;
@@ -252,7 +252,7 @@ let stop_expired_vms t =
     current_time - vm_meta.requested_ts > vm_meta.vm_ttl
   in
   let pos = ref (-1) in
-  let put_in_array key vm_meta =
+  let put_in_array _ vm_meta =
     incr pos;
     match is_expired vm_meta with
     | true  -> expired_vms.(!pos) <- Some vm_meta
@@ -260,8 +260,7 @@ let stop_expired_vms t =
   in
   Hashtbl.iter put_in_array t.name_table;
   let stop_vm = function
-    | None    -> return_unit
+    | None    -> ()
     | Some vm -> stop_vm vm
   in
-  let expired_stream = Lwt_stream.of_array expired_vms in
-  Lwt_stream.iter_s stop_vm expired_stream (* TODO could this run in _p ? *)
+  Array.iter stop_vm expired_vms (* TODO could this run in _p ? *)

@@ -14,10 +14,7 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  *)
 
-open Dns
 open Lwt
-open Libvirt
-open Jitsu
 open Cmdliner
 open Printf
 
@@ -107,12 +104,11 @@ let vm_stop_mode =
 let jitsu connstr bindaddr bindport forwarder forwardport response_delay
     map_domain ttl vm_stop_mode =
   let rec maintenance_thread t timeout =
-    Lwt_unix.sleep timeout
-    >>= fun () ->
+    Lwt_unix.sleep timeout >>= fun () ->
     printf ".";
-    Jitsu.stop_expired_vms t
-    >>= fun () ->
-    maintenance_thread t timeout in
+    Jitsu.stop_expired_vms t;
+    maintenance_thread t timeout;
+  in
   Lwt_main.run (
     ((match forwarder with
         | "" -> Dns_resolver_unix.create () (* use resolv.conf *)
@@ -123,7 +119,7 @@ let jitsu connstr bindaddr bindport forwarder forwardport response_delay
       )
      >>= fun forward_resolver ->
      printf "Connecting to %s...\n" connstr;
-     Jitsu.create connstr forward_resolver (List.length map_domain) ttl
+     Jitsu.create connstr forward_resolver ttl
      >>= fun t ->
      Lwt.choose [(
          (* main thread, DNS server *)
