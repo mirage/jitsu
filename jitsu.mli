@@ -30,8 +30,8 @@ type vm_stop_mode = VmStopDestroy | VmStopSuspend | VmStopShutdown
 type t
 (** The type of Jitsu states. *)
 
-val create: string -> Dns_resolver_unix.t -> int -> t
-(** [create name resolver vm_count] creates a new Jitsu instance. FIXME. *)
+val create: (string -> unit) -> string -> Dns_resolver_unix.t -> int -> t
+(** [create log_function name resolver vm_count] creates a new Jitsu instance. FIXME. *)
 
 val process: t -> Dns.Packet.t Dns_server.process
 (** Process function for ocaml-dns. Starts new VMs from DNS queries or

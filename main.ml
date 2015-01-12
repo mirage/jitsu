@@ -16,7 +16,6 @@
 
 open Lwt
 open Cmdliner
-open Printf
 
 let info =
   let doc =
@@ -101,12 +100,23 @@ let vm_stop_mode =
                           ("shutdown", Jitsu.VmStopShutdown)])
          Jitsu.VmStopSuspend & info ["m" ; "mode" ] ~docv:"MODE" ~doc)
 
+let log m =
+    Printf.fprintf stdout "%s%!" m
+
+let or_abort f =
+    try f () with
+    | Failure m -> (Printf.fprintf stderr "Fatal error: %s" m); exit 1
+
+let or_warn msg f =
+    try f () with
+    | Failure m -> (log (Printf.sprintf "Warning: %s\nReceived exception: %s" msg m)); ()
+
 let jitsu connstr bindaddr bindport forwarder forwardport response_delay
     map_domain ttl vm_stop_mode =
   let rec maintenance_thread t timeout =
     Lwt_unix.sleep timeout >>= fun () ->
-    Printf.printf ".";
-    Jitsu.stop_expired_vms t;
+    log ".";
+    or_warn "Unable to stop expired VMs" (fun () -> Jitsu.stop_expired_vms t);
     maintenance_thread t timeout;
   in
   Lwt_main.run (
@@ -118,18 +128,17 @@ let jitsu connstr bindaddr bindport forwarder forwardport response_delay
           Dns_resolver_unix.create ~config:config ()
       )
      >>= fun forward_resolver ->
-     Printf.printf "Connecting to %s...\n" connstr;
-     let t = Jitsu.create connstr forward_resolver ttl in
+     log (Printf.sprintf "Connecting to %s...\n" connstr);
+     let t = or_abort (fun () -> Jitsu.create log connstr forward_resolver ttl) in
      Lwt.choose [(
          (* main thread, DNS server *)
          let triple (dns,ip,name) =
-           Printf.printf "Adding domain '%s' for VM '%s' with ip %s\n" dns name ip;
-           Jitsu.add_vm t ~domain:dns ~name (Ipaddr.V4.of_string_exn ip)
-             vm_stop_mode ~delay:response_delay ~ttl
+             log (Printf.sprintf "Adding domain '%s' for VM '%s' with ip %s\n" dns name ip);
+             or_abort (fun () -> Jitsu.add_vm t ~domain:dns ~name (Ipaddr.V4.of_string_exn ip) vm_stop_mode ~delay:response_delay ~ttl)
          in
          Lwt_list.iter_p triple map_domain
          >>= fun () ->
-         Printf.printf "Starting server on %s:%d...\n" bindaddr bindport;
+             log (Printf.sprintf "Starting server on %s:%d...\n" bindaddr bindport);
          let processor = ((Dns_server.processor_of_process (Jitsu.process t))
                           :> (module Dns_server.PROCESSOR)) in
          Dns_server_unix.serve_with_processor ~address:bindaddr ~port:bindport

@@ -36,6 +36,7 @@ type vm_metadata = {
 
 type t = {
   db : Loader.db;                         (* DNS database *)
+  log : string -> unit;                (* Log function *) 
   connection : rw Libvirt.Connect.t;      (* connection to libvirt *)
   forward_resolver : Dns_resolver_unix.t; (* DNS to forward request to if no
                                              local match *)
@@ -49,8 +50,9 @@ let try_libvirt msg f =
     try f () with
     | Libvirt.Virterror e -> raise (Failure (Printf.sprintf "%s: %s" msg (Libvirt.Virterror.to_string e)))
 
-let create connstr forward_resolver vm_count =
+let create log connstr forward_resolver vm_count =
   { db = Loader.new_db ();
+    log = log; 
     connection = try_libvirt "Unable to connect" (fun () -> Libvirt.Connect.connect ~name:connstr ());
     forward_resolver = forward_resolver;
     domain_table = Hashtbl.create ~random:true vm_count;
@@ -89,33 +91,33 @@ let suspend_vm vm =
   try_libvirt "Unable to suspend VM" (fun () -> Libvirt.Domain.suspend vm.domain)
 
 let resume_vm vm =
-  Libvirt.Domain.resume vm.domain
+  try_libvirt "Unable to resume VM" (fun () -> Libvirt.Domain.resume vm.domain)
 
 let create_vm vm =
-  Libvirt.Domain.create vm.domain
+  try_libvirt "Unable to create VM" (fun () -> Libvirt.Domain.create vm.domain)
 
-let stop_vm vm =
+let stop_vm t vm =
   match get_vm_state vm with
   | Libvirt.Domain.InfoRunning ->
     begin match vm.how_to_stop with
-      | VmStopShutdown -> Printf.printf "VM shutdown: %s\n" vm.vm_name; shutdown_vm vm
-      | VmStopSuspend  -> Printf.printf "VM suspend: %s\n" vm.vm_name ; suspend_vm vm
-      | VmStopDestroy  -> Printf.printf "VM destroy: %s\n" vm.vm_name ; destroy_vm vm
+      | VmStopShutdown -> t.log (Printf.sprintf "VM shutdown: %s\n" vm.vm_name); shutdown_vm vm
+      | VmStopSuspend  -> t.log (Printf.sprintf "VM suspend: %s\n" vm.vm_name) ; suspend_vm vm
+      | VmStopDestroy  -> t.log (Printf.sprintf "VM destroy: %s\n" vm.vm_name) ; destroy_vm vm
     end
   | _ -> ()
 
-let start_vm vm =
+let start_vm t vm =
   let state = get_vm_state vm in
-  Printf.printf "Starting %s (%s)" vm.vm_name (string_of_vm_state state);
+  t.log (Printf.sprintf "Starting %s (%s)" vm.vm_name (string_of_vm_state state));
   match state with
   | Libvirt.Domain.InfoPaused | Libvirt.Domain.InfoShutdown
   | Libvirt.Domain.InfoShutoff ->
     let () = match state with
       | Libvirt.Domain.InfoPaused ->
-        Printf.printf " --> resuming vm...\n";
+        t.log " --> resuming vm...\n";
         resume_vm vm
       | _ ->
-        Printf.printf " --> creating vm...\n";
+        t.log " --> creating vm...\n";
         create_vm vm
     in
     (* update stats *)
@@ -124,11 +126,11 @@ let start_vm vm =
     (* sleeping a bit *)
     Lwt_unix.sleep vm.query_response_delay
   | Libvirt.Domain.InfoRunning ->
-    Printf.printf " --! VM is already running\n";
+    t.log " --! VM is already running\n";
     return_unit
   | Libvirt.Domain.InfoBlocked | Libvirt.Domain.InfoCrashed
   | Libvirt.Domain.InfoNoState ->
-    Printf.printf " --! VM cannot be started from this state.\n";
+    t.log " --! VM cannot be started from this state.\n";
     return_unit
 
 let get_vm_metadata_by_domain t domain =
@@ -139,8 +141,8 @@ let get_vm_metadata_by_name t name =
   try Some (Hashtbl.find t.name_table name)
   with Not_found -> None
 
-let print_stats vm =
-  Printf.printf "VM: %s\n\
+let get_stats vm =
+  Printf.sprintf "VM: %s\n\
          \ total requests: %d\n\
          \ total starts: %d\n\
          \ last start: %d\n\
@@ -159,28 +161,28 @@ let process t ~src:_ ~dst:_ packet =
       let answer = Query.(answer q.q_name q.q_type t.db.Loader.trie) in
       match answer.Query.rcode with
       | Packet.NoError ->
-        Printf.printf "Local match for domain %s\n"
-          (Name.domain_name_to_string q.q_name);
+        t.log (Printf.sprintf "Local match for domain %s\n"
+          (Name.domain_name_to_string q.q_name));
         (* look for vm in hash table *)
         let vm = get_vm_metadata_by_domain t q.q_name in
         begin match vm with
           | Some vm -> begin (* there is a match *)
-              Printf.printf "Matching VM is %s\n" vm.vm_name;
+              t.log (Printf.sprintf "Matching VM is %s\n" vm.vm_name);
               (* update stats *)
               vm.total_requests <- vm.total_requests + 1;
               vm.requested_ts <- int_of_float (Unix.time());
-              start_vm vm >>= fun () ->
+              start_vm t vm >>= fun () ->
               (* print stats *)
-              print_stats vm;
+              t.log (get_stats vm);
               return (Some answer);
             end;
           | None -> (* no match, fall back to resolver *)
-            Printf.printf "No known VM. Forwarding to next resolver...\n";
+                  t.log "No known VM. Forwarding to next resolver...\n";
             fallback t q.q_class q.q_type q.q_name
         end
       | _ ->
-        Printf.printf "No local match for %s, forwarding...\n"
-          (Name.domain_name_to_string q.q_name);
+        t.log (Printf.sprintf "No local match for %s, forwarding...\n"
+          (Name.domain_name_to_string q.q_name));
         fallback t q.q_class q.q_type q.q_name
     end
   | _ -> return_none
@@ -221,14 +223,14 @@ let add_vm t ~domain:domain_as_string ~name:vm_name vm_ip stop_mode
   let base_domain = get_base_domain domain_as_list in
   let answer = has_local_domain t base_domain Packet.Q_SOA in
   if not answer then (
-    Printf.printf "Adding SOA '%s' with ttl=%d\n"
-      (Name.domain_name_to_string base_domain) ttl;
+    t.log (Printf.sprintf "Adding SOA '%s' with ttl=%d\n"
+      (Name.domain_name_to_string base_domain) ttl);
     (* add soa if not registered before *) (* TODO use same ttl? *)
     add_soa t base_domain ttl;
   );
   (* add dns record *)
-  Printf.printf "Adding A PTR for '%s' with ttl=%d and ip=%s\n"
-    (Name.domain_name_to_string domain_as_list) ttl (Ipaddr.V4.to_string vm_ip);
+  t.log (Printf.sprintf "Adding A PTR for '%s' with ttl=%d and ip=%s\n"
+    (Name.domain_name_to_string domain_as_list) ttl (Ipaddr.V4.to_string vm_ip));
   Loader.add_a_rr vm_ip (Int32.of_int ttl) domain_as_list t.db;
   let existing_record = (get_vm_metadata_by_name t vm_name) in
   (* reuse existing record if possible *)
@@ -268,6 +270,6 @@ let stop_expired_vms t =
   Hashtbl.iter put_in_array t.name_table;
   let stop_vm = function
     | None    -> ()
-    | Some vm -> stop_vm vm
+    | Some vm -> stop_vm t vm
   in
-  Array.iter stop_vm expired_vms (* TODO could this run in _p ? *)
+  Array.iter stop_vm expired_vms 
