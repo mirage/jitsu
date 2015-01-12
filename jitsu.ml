@@ -41,14 +41,14 @@ type t = {
   forward_resolver : Dns_resolver_unix.t; (* DNS to forward request to if no
                                              local match *)
   domain_table : (Name.domain_name, vm_metadata) Hashtbl.t;
-                                          (* vm hash table indexed by domain *)
+  (* vm hash table indexed by domain *)
   name_table : (string, vm_metadata) Hashtbl.t;
-                                          (* vm hash table indexed by vm name *)
+  (* vm hash table indexed by vm name *)
 }
 
 let try_libvirt msg f =
-    try f () with
-    | Libvirt.Virterror e -> raise (Failure (Printf.sprintf "%s: %s" msg (Libvirt.Virterror.to_string e)))
+  try f () with
+  | Libvirt.Virterror e -> raise (Failure (Printf.sprintf "%s: %s" msg (Libvirt.Virterror.to_string e)))
 
 let create log connstr forward_resolver vm_count =
   { db = Loader.new_db ();
@@ -143,11 +143,11 @@ let get_vm_metadata_by_name t name =
 
 let get_stats vm =
   Printf.sprintf "VM: %s\n\
-         \ total requests: %d\n\
-         \ total starts: %d\n\
-         \ last start: %d\n\
-         \ last request: %d (%d seconds since started)\n\
-         \ vm ttl: %d\n"
+                 \ total requests: %d\n\
+                 \ total starts: %d\n\
+                 \ last start: %d\n\
+                 \ last request: %d (%d seconds since started)\n\
+                 \ vm ttl: %d\n"
     vm.vm_name vm.total_requests vm.total_starts vm.started_ts vm.requested_ts
     (vm.requested_ts - vm.started_ts) vm.vm_ttl
 
@@ -162,7 +162,7 @@ let process t ~src:_ ~dst:_ packet =
       match answer.Query.rcode with
       | Packet.NoError ->
         t.log (Printf.sprintf "Local match for domain %s\n"
-          (Name.domain_name_to_string q.q_name));
+                 (Name.domain_name_to_string q.q_name));
         (* look for vm in hash table *)
         let vm = get_vm_metadata_by_domain t q.q_name in
         begin match vm with
@@ -177,12 +177,12 @@ let process t ~src:_ ~dst:_ packet =
               return (Some answer);
             end;
           | None -> (* no match, fall back to resolver *)
-                  t.log "No known VM. Forwarding to next resolver...\n";
+            t.log "No known VM. Forwarding to next resolver...\n";
             fallback t q.q_class q.q_type q.q_name
         end
       | _ ->
         t.log (Printf.sprintf "No local match for %s, forwarding...\n"
-          (Name.domain_name_to_string q.q_name));
+                 (Name.domain_name_to_string q.q_name));
         fallback t q.q_class q.q_type q.q_name
     end
   | _ -> return_none
@@ -224,13 +224,13 @@ let add_vm t ~domain:domain_as_string ~name:vm_name vm_ip stop_mode
   let answer = has_local_domain t base_domain Packet.Q_SOA in
   if not answer then (
     t.log (Printf.sprintf "Adding SOA '%s' with ttl=%d\n"
-      (Name.domain_name_to_string base_domain) ttl);
+             (Name.domain_name_to_string base_domain) ttl);
     (* add soa if not registered before *) (* TODO use same ttl? *)
     add_soa t base_domain ttl;
   );
   (* add dns record *)
   t.log (Printf.sprintf "Adding A PTR for '%s' with ttl=%d and ip=%s\n"
-    (Name.domain_name_to_string domain_as_list) ttl (Ipaddr.V4.to_string vm_ip));
+           (Name.domain_name_to_string domain_as_list) ttl (Ipaddr.V4.to_string vm_ip));
   Loader.add_a_rr vm_ip (Int32.of_int ttl) domain_as_list t.db;
   let existing_record = (get_vm_metadata_by_name t vm_name) in
   (* reuse existing record if possible *)
