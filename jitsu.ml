@@ -36,7 +36,7 @@ type vm_metadata = {
 
 type t = {
   db : Loader.db;                         (* DNS database *)
-  log : string -> unit;                (* Log function *) 
+  log : string -> unit;                   (* Log function *) 
   connection : rw Libvirt.Connect.t;      (* connection to libvirt *)
   forward_resolver : Dns_resolver_unix.t; (* DNS to forward request to if no
                                              local match *)
@@ -121,7 +121,7 @@ let start_vm t vm =
         create_vm vm
     in
     (* update stats *)
-    vm.started_ts <- int_of_float (Unix.time());
+    vm.started_ts <- truncate (Unix.time());
     vm.total_starts <- vm.total_starts + 1;
     (* sleeping a bit *)
     Lwt_unix.sleep vm.query_response_delay
