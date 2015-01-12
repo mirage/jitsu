@@ -21,7 +21,7 @@ sudo ./jitsu www.openmirage.org,192.168.0.22,mirage-www -c xen:///
 
 The command above connects to a local Xen-server (from dom0) through libvirt and starts the DNS server. Requests for www.openmirage.org will be redirected to the Xen-VM called "mirage-www" with IP 192.168.0.22. If "mirage-www" is not running, jitsu will start it automatically before responding to the DNS request.
 
-See [below](#Options) or run ./jitsu --help for more options.
+See [below](#options) or run ./jitsu --help for more options.
 
 ### Testing with VMs in Virtualbox ###
 Jitsu can be used to control VMs in Virtualbox. First, install libvirt and use virsh to display a list of available VMs. Example output:
