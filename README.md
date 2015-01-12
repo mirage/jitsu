@@ -43,7 +43,7 @@ If virsh is unable to connect to Virtualbox, you may have to adjust the connecti
 
 You should now be able to start Jitsu. Use '-m suspend' to set it to suspend the VM on inactivity. Example output:
 
-```bash
+```
 $ sudo ./jitsu www.example.com,127.0.0.1,Ubuntu -m suspend -c vbox:///session
 Connecting to vbox:///session...
 Adding domain 'www.example.com' for VM 'Ubuntu' with ip 127.0.0.1
@@ -54,7 +54,7 @@ Starting server on 127.0.0.1:53...
 
 To test that Jitsu works, try to resolve the domain with host:
 
-```bash
+```
 $ host www.example.com 127.0.0.1
 Using domain server:
 Name: 127.0.0.1
@@ -66,7 +66,7 @@ www.example.com has address 127.0.0.1
 
 The domain should now be running.
 
-```bash
+```
 $ virsh dominfo Ubuntu
 Id:             2
 Name:           Ubuntu
