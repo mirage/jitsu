@@ -16,7 +16,6 @@
 
 open Lwt
 open Dns
-open Printf
 open Libvirt
 
 type vm_stop_mode = VmStopDestroy | VmStopSuspend | VmStopShutdown
@@ -46,9 +45,13 @@ type t = {
                                           (* vm hash table indexed by vm name *)
 }
 
+let try_libvirt msg f =
+    try f () with
+    | Libvirt.Virterror e -> raise (Failure (Printf.sprintf "%s: %s" msg (Libvirt.Virterror.to_string e)))
+
 let create connstr forward_resolver vm_count =
   { db = Loader.new_db ();
-    connection = Libvirt.Connect.connect ~name:connstr ();
+    connection = try_libvirt "Unable to connect" (fun () -> Libvirt.Connect.connect ~name:connstr ());
     forward_resolver = forward_resolver;
     domain_table = Hashtbl.create ~random:true vm_count;
     name_table = Hashtbl.create ~random:true vm_count }
@@ -70,20 +73,20 @@ let string_of_vm_state = function
   | Libvirt.Domain.InfoCrashed -> "crashed"
 
 let get_vm_info vm =
-  Libvirt.Domain.get_info vm.domain
+  try_libvirt "Unable to get VM info" (fun () -> Libvirt.Domain.get_info vm.domain)
 
 let get_vm_state vm =
   let info = get_vm_info vm in
-  info.Libvirt.Domain.state
+  try_libvirt "Unable to get VM state" (fun () -> info.Libvirt.Domain.state)
 
 let destroy_vm vm =
-  Libvirt.Domain.destroy vm.domain
+  try_libvirt "Unable to destroy VM" (fun () -> Libvirt.Domain.destroy vm.domain)
 
 let shutdown_vm vm =
-  Libvirt.Domain.shutdown vm.domain
+  try_libvirt "Unable to shutdown VM" (fun () -> Libvirt.Domain.shutdown vm.domain)
 
 let suspend_vm vm =
-  Libvirt.Domain.suspend vm.domain
+  try_libvirt "Unable to suspend VM" (fun () -> Libvirt.Domain.suspend vm.domain)
 
 let resume_vm vm =
   Libvirt.Domain.resume vm.domain
@@ -212,7 +215,7 @@ let get_base_domain domain =
 let add_vm t ~domain:domain_as_string ~name:vm_name vm_ip stop_mode
     ~delay:response_delay ~ttl =
   (* check if vm_name exists and set up VM record *)
-  let vm_dom = Libvirt.Domain.lookup_by_name t.connection vm_name in
+  let vm_dom = try_libvirt "Unable to lookup VM by name" (fun () -> Libvirt.Domain.lookup_by_name t.connection vm_name) in
   (* check if SOA is registered and domain is ok *)
   let domain_as_list = Name.string_to_domain_name domain_as_string in
   let base_domain = get_base_domain domain_as_list in
