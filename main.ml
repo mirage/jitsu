@@ -105,7 +105,7 @@ let jitsu connstr bindaddr bindport forwarder forwardport response_delay
     map_domain ttl vm_stop_mode =
   let rec maintenance_thread t timeout =
     Lwt_unix.sleep timeout >>= fun () ->
-    printf ".";
+    Printf.printf ".";
     Jitsu.stop_expired_vms t;
     maintenance_thread t timeout;
   in
@@ -118,18 +118,18 @@ let jitsu connstr bindaddr bindport forwarder forwardport response_delay
           Dns_resolver_unix.create ~config:config ()
       )
      >>= fun forward_resolver ->
-     printf "Connecting to %s...\n" connstr;
+     Printf.printf "Connecting to %s...\n" connstr;
      let t = Jitsu.create connstr forward_resolver ttl in
      Lwt.choose [(
          (* main thread, DNS server *)
          let triple (dns,ip,name) =
-           printf "Adding domain '%s' for VM '%s' with ip %s\n" dns name ip;
+           Printf.printf "Adding domain '%s' for VM '%s' with ip %s\n" dns name ip;
            Jitsu.add_vm t ~domain:dns ~name (Ipaddr.V4.of_string_exn ip)
              vm_stop_mode ~delay:response_delay ~ttl
          in
          Lwt_list.iter_p triple map_domain
          >>= fun () ->
-         printf "Starting server on %s:%d...\n" bindaddr bindport;
+         Printf.printf "Starting server on %s:%d...\n" bindaddr bindport;
          let processor = ((Dns_server.processor_of_process (Jitsu.process t))
                           :> (module Dns_server.PROCESSOR)) in
          Dns_server_unix.serve_with_processor ~address:bindaddr ~port:bindport

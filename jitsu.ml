@@ -95,24 +95,24 @@ let stop_vm vm =
   match get_vm_state vm with
   | Libvirt.Domain.InfoRunning ->
     begin match vm.how_to_stop with
-      | VmStopShutdown -> printf "VM shutdown: %s\n" vm.vm_name; shutdown_vm vm
-      | VmStopSuspend  -> printf "VM suspend: %s\n" vm.vm_name ; suspend_vm vm
-      | VmStopDestroy  -> printf "VM destroy: %s\n" vm.vm_name ; destroy_vm vm
+      | VmStopShutdown -> Printf.printf "VM shutdown: %s\n" vm.vm_name; shutdown_vm vm
+      | VmStopSuspend  -> Printf.printf "VM suspend: %s\n" vm.vm_name ; suspend_vm vm
+      | VmStopDestroy  -> Printf.printf "VM destroy: %s\n" vm.vm_name ; destroy_vm vm
     end
   | _ -> ()
 
 let start_vm vm =
   let state = get_vm_state vm in
-  printf "Starting %s (%s)" vm.vm_name (string_of_vm_state state);
+  Printf.printf "Starting %s (%s)" vm.vm_name (string_of_vm_state state);
   match state with
   | Libvirt.Domain.InfoPaused | Libvirt.Domain.InfoShutdown
   | Libvirt.Domain.InfoShutoff ->
     let () = match state with
       | Libvirt.Domain.InfoPaused ->
-        printf " --> resuming vm...\n";
+        Printf.printf " --> resuming vm...\n";
         resume_vm vm
       | _ ->
-        printf " --> creating vm...\n";
+        Printf.printf " --> creating vm...\n";
         create_vm vm
     in
     (* update stats *)
@@ -121,11 +121,11 @@ let start_vm vm =
     (* sleeping a bit *)
     Lwt_unix.sleep vm.query_response_delay
   | Libvirt.Domain.InfoRunning ->
-    printf " --! VM is already running\n";
+    Printf.printf " --! VM is already running\n";
     return_unit
   | Libvirt.Domain.InfoBlocked | Libvirt.Domain.InfoCrashed
   | Libvirt.Domain.InfoNoState ->
-    printf " --! VM cannot be started from this state.\n";
+    Printf.printf " --! VM cannot be started from this state.\n";
     return_unit
 
 let get_vm_metadata_by_domain t domain =
@@ -137,7 +137,7 @@ let get_vm_metadata_by_name t name =
   with Not_found -> None
 
 let print_stats vm =
-  printf "VM: %s\n\
+  Printf.printf "VM: %s\n\
          \ total requests: %d\n\
          \ total starts: %d\n\
          \ last start: %d\n\
@@ -156,13 +156,13 @@ let process t ~src:_ ~dst:_ packet =
       let answer = Query.(answer q.q_name q.q_type t.db.Loader.trie) in
       match answer.Query.rcode with
       | Packet.NoError ->
-        printf "Local match for domain %s\n"
+        Printf.printf "Local match for domain %s\n"
           (Name.domain_name_to_string q.q_name);
         (* look for vm in hash table *)
         let vm = get_vm_metadata_by_domain t q.q_name in
         begin match vm with
           | Some vm -> begin (* there is a match *)
-              printf "Matching VM is %s\n" vm.vm_name;
+              Printf.printf "Matching VM is %s\n" vm.vm_name;
               (* update stats *)
               vm.total_requests <- vm.total_requests + 1;
               vm.requested_ts <- int_of_float (Unix.time());
@@ -172,11 +172,11 @@ let process t ~src:_ ~dst:_ packet =
               return (Some answer);
             end;
           | None -> (* no match, fall back to resolver *)
-            printf "No known VM. Forwarding to next resolver...\n";
+            Printf.printf "No known VM. Forwarding to next resolver...\n";
             fallback t q.q_class q.q_type q.q_name
         end
       | _ ->
-        printf "No local match for %s, forwarding...\n"
+        Printf.printf "No local match for %s, forwarding...\n"
           (Name.domain_name_to_string q.q_name);
         fallback t q.q_class q.q_type q.q_name
     end
@@ -218,13 +218,13 @@ let add_vm t ~domain:domain_as_string ~name:vm_name vm_ip stop_mode
   let base_domain = get_base_domain domain_as_list in
   let answer = has_local_domain t base_domain Packet.Q_SOA in
   if not answer then (
-    printf "Adding SOA '%s' with ttl=%d\n"
+    Printf.printf "Adding SOA '%s' with ttl=%d\n"
       (Name.domain_name_to_string base_domain) ttl;
     (* add soa if not registered before *) (* TODO use same ttl? *)
     add_soa t base_domain ttl;
   );
   (* add dns record *)
-  printf "Adding A PTR for '%s' with ttl=%d and ip=%s\n"
+  Printf.printf "Adding A PTR for '%s' with ttl=%d and ip=%s\n"
     (Name.domain_name_to_string domain_as_list) ttl (Ipaddr.V4.to_string vm_ip);
   Loader.add_a_rr vm_ip (Int32.of_int ttl) domain_as_list t.db;
   let existing_record = (get_vm_metadata_by_name t vm_name) in
@@ -250,8 +250,7 @@ let add_vm t ~domain:domain_as_string ~name:vm_name vm_ip stop_mode
    requests for more than ttl*2 seconds *)
 let stop_expired_vms t =
   let expired_vms = Array.make (Hashtbl.length t.name_table) None in
-  (* TODO this should be run in lwt, but hopefully it is reasonably fast this way.
-     Extract expired first, then stop with lwt *)
+  (* TODO this should be run in lwt, but hopefully it is reasonably fast this way. *)
   let current_time = int_of_float (Unix.time ()) in
   let is_expired vm_meta =
     current_time - vm_meta.requested_ts > vm_meta.vm_ttl
