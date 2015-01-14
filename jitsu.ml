@@ -233,8 +233,8 @@ let start_vm t vm =
       blocking_xenlight
         (fun () ->
           try
-            let _domid = Xenlight.Domain.create_restore context (domain_config vm) (Lwt_unix.unix_file_descr fd, params) () in
-            ()
+            let domid = Xenlight.Domain.create_restore context (domain_config vm) (Lwt_unix.unix_file_descr fd, params) () in
+            Xenlight.Domain.unpause context domid
           with e ->
             fprintf stderr "Resume failed with: %s. Consider deleting suspend file %s.\n%!" (Printexc.to_string e) suspend_image
         );
@@ -244,8 +244,8 @@ let start_vm t vm =
       blocking_xenlight
         (fun () ->
           try
-            let _domid = Xenlight.Domain.create_new context (domain_config vm) () in
-            ()
+            let domid = Xenlight.Domain.create_new context (domain_config vm) () in
+            Xenlight.Domain.unpause context domid
           with e ->
             fprintf stderr "Create failed with: %s.\n%!" (Printexc.to_string e);
         );
