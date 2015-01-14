@@ -28,14 +28,10 @@ let info =
      stopped." in
   let man = [
     `S "EXAMPLES";
-    `P "jitsu -c xen:/// -f 8.8.8.8 -m destroy mirage.org,10.0.0.1,mirage-www";
-    `P "Connect to Xen. Start VM 'mirage-www' on requests for mirage.org and \
+    `P "jitsu -f 8.8.8.8 -m destroy mirage.org,virbr0,10.0.0.1,/unikernels/mirage-www.xen,32768";
+    `P "Start unikernel '/unikernels/mirage-www.xen' with 32MiB of memory and a VIF on virbr0 on requests for mirage.org and \
         return IP 10.0.0.1 when VM is running. Forward unknown requests to \
         8.8.8.8 (Google). Expired VMs are destroyed.";
-    `P "jitsu -c vbox:///session -m suspend home.local,192.168.0.1,ubuntu -t 60";
-    `P "Connect to Virtualbox. Start VM 'ubuntu' on requests for home.local \
-        and return IP 192.168.0.1. Forward unknown requests to system default. \
-        Expired VMs are suspended after 120 seconds (2 x DNS ttl).";
     `S "AUTHORS";
     `P "Magnus Skjegstad <magnus@skjegstad.com>" ;
     `S "BUGS";
@@ -49,12 +45,6 @@ let bindaddr =
 let bindport =
   let doc = "UDP port to listen for DNS queries" in
   Arg.(value & opt int 53 & info ["l"; "listen"] ~docv:"PORT" ~doc)
-
-let connstr =
-  let doc =
-    "libvirt connection string (e.g. xen+ssh://x.x.x.x/system or vbox:///session)"
-  in
-  Arg.(value & opt string "xen:///" & info ["c"; "connect"] ~docv:"CONNECT" ~doc)
 
 let forwarder =
   let doc =
@@ -75,12 +65,16 @@ let response_delay =
      first TCP request to the VM." in
   Arg.(value & opt float 0.1 & info ["d" ; "delay" ] ~docv:"SECONDS" ~doc)
 
+let bridge =
+  let doc = "Bridge to attach VM NICs to" in
+  Arg.(value & opt string "xenbr0" & info [ "bridge" ] ~docv:"BRIDGE" ~doc)
+
 let map_domain =
   let doc =
-    "Maps DOMAIN to a VM and IP. VM must match a VM available through libvirt \
+    "Maps DOMAIN to a VM, IP and memory in KiB. VM must match a VM available through libvirt \
      (see virsh list --all)." in
-  Arg.(non_empty & pos_all (t3 ~sep:',' string string string) [] & info []
-         ~docv:"DOMAIN,IP,VM" ~doc)
+  Arg.(non_empty & pos_all (t4 ~sep:',' string string string int64) [] & info []
+         ~docv:"DOMAIN,IP,BRIDGE,VM,KIB" ~doc)
 
 let ttl =
   let doc =
@@ -111,14 +105,19 @@ let or_warn msg f =
   try f () with
   | Failure m -> (log (Printf.sprintf "Warning: %s\nReceived exception: %s" msg m)); ()
 
-let jitsu connstr bindaddr bindport forwarder forwardport response_delay
-    map_domain ttl vm_stop_mode =
-  let rec maintenance_thread t timeout =
-    Lwt_unix.sleep timeout >>= fun () ->
-    log ".";
-    or_warn "Unable to stop expired VMs" (fun () -> Jitsu.stop_expired_vms t);
-    maintenance_thread t timeout;
-  in
+let spinner = [| '-'; '\\'; '|'; '/' |]
+
+let jitsu bindaddr bindport forwarder forwardport response_delay
+    bridge map_domain ttl vm_stop_mode =
+  let maintenance_thread t timeout =
+    let rec loop i =
+      let i = if i >= Array.length spinner then 0 else i in
+      Lwt_unix.sleep timeout >>= fun () ->
+      Printf.printf "\b%c%!" spinner.(i);
+      Jitsu.stop_expired_vms t
+      >>= fun () ->
+      loop (i + 1) in
+    loop 0 in
   Lwt_main.run (
     ((match forwarder with
         | "" -> Dns_resolver_unix.create () (* use resolv.conf *)
@@ -128,15 +127,15 @@ let jitsu connstr bindaddr bindport forwarder forwardport response_delay
           Dns_resolver_unix.create ~config:config ()
       )
      >>= fun forward_resolver ->
-     log (Printf.sprintf "Connecting to %s...\n" connstr);
-     let t = or_abort (fun () -> Jitsu.create log connstr forward_resolver ttl) in
+     let t = Jitsu.create log forward_resolver ttl in
      Lwt.choose [(
          (* main thread, DNS server *)
-         let triple (dns,ip,name) =
-           log (Printf.sprintf "Adding domain '%s' for VM '%s' with ip %s\n" dns name ip);
-           or_abort (fun () -> Jitsu.add_vm t ~domain:dns ~name (Ipaddr.V4.of_string_exn ip) vm_stop_mode ~delay:response_delay ~ttl)
+         let per_vm (dns,ip,name,memory_kb) =
+           log (Printf.sprintf "Adding domain '%s' for VM '%s' with ip %s on bridge %s and %Ld KiB of RAM\n" dns name ip bridge memory_kb);
+           Jitsu.add_vm t ~domain:dns ~name ~bridge ~memory_kb (Ipaddr.V4.of_string_exn ip)
+             vm_stop_mode ~delay:response_delay ~ttl
          in
-         Lwt_list.iter_p triple map_domain
+         Lwt_list.iter_p per_vm map_domain
          >>= fun () ->
          log (Printf.sprintf "Starting server on %s:%d...\n" bindaddr bindport);
          let processor = ((Dns_server.processor_of_process (Jitsu.process t))
@@ -148,8 +147,8 @@ let jitsu connstr bindaddr bindport forwarder forwardport response_delay
   )
 
 let jitsu_t =
-  Term.(pure jitsu $ connstr $ bindaddr $ bindport $ forwarder $ forwardport
-        $ response_delay $ map_domain $ ttl $ vm_stop_mode )
+  Term.(pure jitsu $ bindaddr $ bindport $ forwarder $ forwardport
+        $ response_delay $ bridge $ map_domain $ ttl $ vm_stop_mode )
 
 let () =
   match Term.eval (jitsu_t, info) with
