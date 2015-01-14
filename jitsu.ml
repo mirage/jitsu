@@ -157,8 +157,14 @@ let stop_vm vm =
     ( try
         Xenlight.Domain.suspend (Lazy.force context) domid (Lwt_unix.unix_file_descr fd) ();
       with e ->
-        fprintf stderr "Failed to suspend domain: %s" (Printexc.to_string e);
-        Unix.unlink filename );
+        fprintf stderr "Failed to suspend domain: %s. Will destroy instead.\n%!" (Printexc.to_string e);
+        Unix.unlink filename;
+        ( try
+            Xenlight.Domain.destroy (Lazy.force context) domid ()
+          with e ->
+            fprintf stderr "Destroy failed too: %s. I'm out of bright ideas.\n%!" (Printexc.to_string e)
+        );
+    );
     Sys.set_signal Sys.sigchld old_handler;
     Lwt_unix.close fd
   | (Halted | Suspended _), _ ->
