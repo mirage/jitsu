@@ -28,7 +28,7 @@ let info =
      stopped." in
   let man = [
     `S "EXAMPLES";
-    `P "jitsu -f 8.8.8.8 -m destroy mirage.org,virbr0,10.0.0.1,/unikernels/mirage-www.xen,32768";
+    `P "jitsu -f 8.8.8.8 -m destroy --bridge virbr0 mirage.org,10.0.0.1,/unikernels/mirage-www.xen,32768";
     `P "Start unikernel '/unikernels/mirage-www.xen' with 32MiB of memory and a VIF on virbr0 on requests for mirage.org and \
         return IP 10.0.0.1 when VM is running. Forward unknown requests to \
         8.8.8.8 (Google). Expired VMs are destroyed.";
@@ -74,7 +74,7 @@ let map_domain =
     "Maps DOMAIN to a VM, IP and memory in KiB. VM must match a VM available through libvirt \
      (see virsh list --all)." in
   Arg.(non_empty & pos_all (t4 ~sep:',' string string string int64) [] & info []
-         ~docv:"DOMAIN,IP,BRIDGE,VM,KIB" ~doc)
+         ~docv:"DOMAIN,IP,VM,KIB" ~doc)
 
 let ttl =
   let doc =
