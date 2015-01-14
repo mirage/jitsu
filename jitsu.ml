@@ -137,9 +137,17 @@ let stop_vm vm =
     Xenlight.Domain.destroy context domid ();
     return ()
   | Running domid, VmStopSuspend  ->
-    Lwt_unix.openfile (suspend_filename vm) [ Unix.O_WRONLY; Unix.O_CREAT ] 0
+    let filename = suspend_filename vm in
+    Lwt_unix.openfile filename [ Unix.O_WRONLY; Unix.O_CREAT ] 0
     >>= fun fd ->
-    Xenlight.Domain.suspend context domid (Lwt_unix.unix_file_descr fd) ();
+    let old_handler = Sys.signal Sys.sigchld Sys.Signal_default in
+    (* TODO: this code blocks. Use a subprocess? *)
+    ( try
+        Xenlight.Domain.suspend context domid (Lwt_unix.unix_file_descr fd) ();
+      with e ->
+        fprintf stderr "Failed to suspend domain: %s" (Printexc.to_string e);
+        Unix.unlink filename );
+    Sys.set_signal Sys.sigchld old_handler;
     Lwt_unix.close fd
   | (Halted | Suspended _), _ ->
     return ()
