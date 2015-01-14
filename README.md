@@ -29,74 +29,14 @@ responding to the DNS request.
 
 See [below](#options) or run ./jitsu --help for more options.
 
-### Testing with VMs in Virtualbox ###
-Jitsu can be used to control VMs in Virtualbox. First, install libvirt and use virsh to display a list of available VMs. Example output:
-
-```
-$ virsh list --all
-Welcome to virsh, the virtualization interactive terminal.
-
-Type:  'help' for help with commands
-       'quit' to quit
-
-virsh # list --all
- Id    Name                           State
-----------------------------------------------------
- 2     Ubuntu                         running
-```
-
-If virsh is unable to connect to Virtualbox, you may have to adjust the connection URI (`-c [uri]`). The default connection URI for Virtualbox is vbox:///session - see [this page](https://libvirt.org/remote.html) for more details. I had to set the socket manually in OS X, which can be done with 'vbox:///session?socket=path-to-socket'. Remember to use the same connection URI for Jitsu below.
-
-You should now be able to start Jitsu. Use '-m suspend' to set it to suspend the VM on inactivity. Example output:
-
-```
-$ sudo ./jitsu www.example.com,127.0.0.1,Ubuntu -m suspend -c vbox:///session
-Connecting to vbox:///session...
-Adding domain 'www.example.com' for VM 'Ubuntu' with ip 127.0.0.1
-Adding SOA 'example.com' with ttl=60
-Adding A PTR for 'www.example.com' with ttl=60 and ip=127.0.0.1
-Starting server on 127.0.0.1:53...
-```
-
-To test that Jitsu works, try to resolve the domain with host:
-
-```
-$ host www.example.com 127.0.0.1
-Using domain server:
-Name: 127.0.0.1
-Address: 127.0.0.1#53
-Aliases:
-
-www.example.com has address 127.0.0.1
-```
-
-The domain should now be running.
-
-```
-$ virsh dominfo Ubuntu
-Id:             2
-Name:           Ubuntu
-UUID:           6e696eb7-09f4-484c-981b-8d34efa0304d
-OS Type:        hvm
-State:          running
-CPU(s):         3
-Max memory:     2147483648 KiB
-Used memory:    3166208 KiB
-Persistent:     yes
-Managed save:   unknown
-```
-
-After 2 minutes without DNS requests, Jitsu will suspend the domain automatically. This timeout can be set with the --ttl parameter.
-
 ## Options ##
 
 ```
 -b ADDR, --bind=ADDR (absent=127.0.0.1)
-           Bind local DNS server to interface with this IP
+   Bind local DNS server to interface with this IP
 
--c CONNECT, --connect=CONNECT (absent=xen:///)
-   libvirt connection string (e.g. xen+ssh://x.x.x.x/system or
-   vbox:///session)
+--bridge=BRIDGE (absent=xenbr0)
+   Bridge to attach VM NICs to
 
 -d SECONDS, --delay=SECONDS (absent=0.1)
    Time to wait in seconds before responding to a DNS query after the
@@ -132,4 +72,3 @@ After 2 minutes without DNS requests, Jitsu will suspend the domain automaticall
 --version
    Show version information.
 ```
-
