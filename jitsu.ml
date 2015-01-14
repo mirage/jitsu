@@ -47,8 +47,10 @@ type t = {
   (* vm hash table indexed by vm name *)
 }
 
-(* All libxl calls need one of these to say where the logs should go *)
-let context =
+(* All libxl calls need one of these to say where the logs should go.
+   We delay the creation because it can fail (e.g. due to insufficient privileges)
+   and we would still like people to be able to consult command-line arguments *)
+let context = lazy (
   Xenlight.register_exceptions ();
   Printexc.register_printer (function
     | Xenlight.Error(error, msg) ->
@@ -66,7 +68,17 @@ let context =
       let nl = if dne = total then "\n" else "" in
       Printf.fprintf stderr "\rProgress %s %d%% (%Ld/%Ld)%s" what percent dne total nl in
     create "Xentoollog.logger" { vmessage; progress } in
-  Xenlight.ctx_alloc logger
+  try
+    Xenlight.ctx_alloc logger
+  with e ->
+    fprintf stderr "Unable to talk to Xen. Please check that:\n";
+    fprintf stderr "- Xen is running (try cat /sys/hypervisor/type)\n";
+    fprintf stderr "- xenfs is mounted\n";
+    fprintf stderr "- Xenstore is running\n";
+    fprintf stderr "- you have sufficient privileges\n";
+    fprintf stderr "\nRaw error was: %s\n%!" (Printexc.to_string e);
+    exit 1
+)
 
 let create log forward_resolver vm_count =
   { db = Loader.new_db ();
@@ -102,7 +114,7 @@ let file_readable filename =
     ) (fun _ -> return false)
 
 let get_vm_state vm =
-  let domids = List.map (fun di -> di.Xenlight.Dominfo.domid) (Xenlight.Dominfo.list context) in
+  let domids = List.map (fun di -> di.Xenlight.Dominfo.domid) (Xenlight.Dominfo.list (Lazy.force context)) in
   Xs.make ()
   >>= fun xsc ->
   Xs.(immediate xsc
@@ -131,10 +143,10 @@ let stop_vm vm =
   >>= fun state ->
   match state, vm.how_to_stop with
   | Running domid, VmStopShutdown ->
-    Xenlight.Domain.shutdown context domid;
+    Xenlight.Domain.shutdown (Lazy.force context) domid;
     return ()
   | Running domid, VmStopDestroy  ->
-    Xenlight.Domain.destroy context domid ();
+    Xenlight.Domain.destroy (Lazy.force context) domid ();
     return ()
   | Running domid, VmStopSuspend  ->
     let filename = suspend_filename vm in
@@ -143,7 +155,7 @@ let stop_vm vm =
     let old_handler = Sys.signal Sys.sigchld Sys.Signal_default in
     (* TODO: this code blocks. Use a subprocess? *)
     ( try
-        Xenlight.Domain.suspend context domid (Lwt_unix.unix_file_descr fd) ();
+        Xenlight.Domain.suspend (Lazy.force context) domid (Lwt_unix.unix_file_descr fd) ();
       with e ->
         fprintf stderr "Failed to suspend domain: %s" (Printexc.to_string e);
         Unix.unlink filename );
@@ -154,6 +166,7 @@ let stop_vm vm =
 
 let domain_config vm =
   let memory_kb = vm.memory_kb in
+  let context = Lazy.force context in
   let c_info = Xenlight.Domain_create_info.({ (default context ()) with
     Xenlight.Domain_create_info.xl_type = Xenlight.DOMAIN_TYPE_PV;
     name = Some vm.vm_name;
@@ -178,6 +191,7 @@ let domain_config vm =
   })
 
 let start_vm t vm =
+  let context = Lazy.force context in
   get_vm_state vm
   >>= fun state ->
   t.log (Printf.sprintf "Starting %s (%s)" vm.vm_name (string_of_info state));
