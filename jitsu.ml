@@ -25,6 +25,7 @@ type vm_stop_mode = VmStopDestroy | VmStopSuspend | VmStopShutdown
 type vm_metadata = {
   vm_name: string;              (* Unique name of the VM, matches kernel filename *)
   memory_kb: int64;             (* VM memory in KiB *)
+  bridge: string;               (* Name of the bridge to connect VIF to *)
   query_response_delay : float; (* in seconds, delay after startup before
                                    sending query response *)
   vm_ttl : int;                 (* TTL in seconds. VM is stopped [vm_ttl]
@@ -138,6 +139,18 @@ let get_vm_state vm =
       | true -> return (Suspended filename)
       | false -> return Halted )
 
+let blocking_xenlight f =
+  (* Xenlight wants to control SIGCHILD.
+     TODO: can we do better than this? *)
+  let old_handler = Sys.signal Sys.sigchld Sys.Signal_default in
+  try
+    let result = f () in
+    Sys.set_signal Sys.sigchld old_handler;
+    result
+  with e ->
+    Sys.set_signal Sys.sigchld old_handler;
+    raise e
+
 let stop_vm vm =
   get_vm_state vm
   >>= fun state ->
@@ -152,26 +165,26 @@ let stop_vm vm =
     let filename = suspend_filename vm in
     Lwt_unix.openfile filename [ Unix.O_WRONLY; Unix.O_CREAT ] 0
     >>= fun fd ->
-    let old_handler = Sys.signal Sys.sigchld Sys.Signal_default in
-    (* TODO: this code blocks. Use a subprocess? *)
-    ( try
-        Xenlight.Domain.suspend (Lazy.force context) domid (Lwt_unix.unix_file_descr fd) ();
-      with e ->
-        fprintf stderr "Failed to suspend domain: %s. Will destroy instead.\n%!" (Printexc.to_string e);
-        Unix.unlink filename;
-        ( try
-            Xenlight.Domain.destroy (Lazy.force context) domid ()
-          with e ->
-            fprintf stderr "Destroy failed too: %s. I'm out of bright ideas.\n%!" (Printexc.to_string e)
-        );
-    );
-    Sys.set_signal Sys.sigchld old_handler;
+    blocking_xenlight
+      (fun () ->
+        try
+          Xenlight.Domain.suspend (Lazy.force context) domid (Lwt_unix.unix_file_descr fd) ();
+        with e ->
+          fprintf stderr "Failed to suspend domain: %s. Will destroy instead.\n%!" (Printexc.to_string e);
+          Unix.unlink filename;
+          ( try
+              Xenlight.Domain.destroy (Lazy.force context) domid ()
+            with e ->
+              fprintf stderr "Destroy failed too: %s. I'm out of bright ideas.\n%!" (Printexc.to_string e)
+          );
+      );
     Lwt_unix.close fd
   | (Halted | Suspended _), _ ->
     return ()
 
 let domain_config vm =
   let memory_kb = vm.memory_kb in
+  let bridge = vm.bridge in
   let context = Lazy.force context in
   let c_info = Xenlight.Domain_create_info.({ (default context ()) with
     Xenlight.Domain_create_info.xl_type = Xenlight.DOMAIN_TYPE_PV;
@@ -191,9 +204,14 @@ let domain_config vm =
       ramdisk = None;
     };
   }) in
+  let nics = [| Xenlight.Device_nic.({ (default context ()) with
+    Xenlight.Device_nic.mtu = 1500;
+    bridge = Some bridge;
+  }) |] in
   Xenlight.Domain_config.({ (default context ()) with
     c_info;
     b_info;
+    nics;
   })
 
 let start_vm t vm =
@@ -212,11 +230,25 @@ let start_vm t vm =
       Lwt_unix.openfile suspend_image [ Unix.O_RDONLY ] 0
       >>= fun fd ->
       let params = Xenlight.Domain_restore_params.default context () in
-      let _domid = Xenlight.Domain.create_restore context (domain_config vm) (Lwt_unix.unix_file_descr fd, params) () in
+      blocking_xenlight
+        (fun () ->
+          try
+            let _domid = Xenlight.Domain.create_restore context (domain_config vm) (Lwt_unix.unix_file_descr fd, params) () in
+            ()
+          with e ->
+            fprintf stderr "Resume failed with: %s. Consider deleting suspend file %s.\n%!" (Printexc.to_string e) suspend_image
+        );
       Lwt_unix.close fd
     | Halted ->
       t.log (Printf.sprintf " --> creating vm...");
-      let _domid = Xenlight.Domain.create_new context (domain_config vm) () in
+      blocking_xenlight
+        (fun () ->
+          try
+            let _domid = Xenlight.Domain.create_new context (domain_config vm) () in
+            ()
+          with e ->
+            fprintf stderr "Create failed with: %s.\n%!" (Printexc.to_string e);
+        );
       return_unit
     | _ -> assert false
     ) >>= fun () ->
@@ -307,8 +339,8 @@ let get_base_domain domain =
   | _ -> raise (Failure "Invalid domain name")
 
 (* add vm to be monitored by jitsu *)
-let add_vm t ~domain:domain_as_string ~name:vm_name ~memory_kb vm_ip stop_mode
-    ~delay:response_delay ~ttl =
+let add_vm t ~domain:domain_as_string ~name:vm_name ~bridge ~memory_kb
+    vm_ip stop_mode ~delay:response_delay ~ttl =
   ( file_readable vm_name
     >>= function
     | false ->
@@ -336,6 +368,7 @@ let add_vm t ~domain:domain_as_string ~name:vm_name ~memory_kb vm_ip stop_mode
   let record = match existing_record with
     | None -> { how_to_stop = stop_mode;
                 vm_name;
+                bridge;
                 memory_kb;
                 vm_ttl = ttl * 2; (* note *2 here *)
                 query_response_delay = response_delay;

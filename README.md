@@ -18,7 +18,7 @@ make
 You should now be able to start jitsu:
 
 ```
-sudo ./jitsu www.openmirage.org,192.168.0.22,/unikernels/mirage-www.xen,32768
+sudo ./jitsu --bridge=xenbr0 www.openmirage.org,192.168.0.22,/unikernels/mirage-www.xen,32768
 ```
 
 The command above connects to a local Xen-server (from dom0) through libxl and starts the DNS server.
