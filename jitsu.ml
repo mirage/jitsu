@@ -22,12 +22,18 @@ module Client = Xs_client_lwt.Client(Xs_transport_lwt_unix_client)
 
 type vm_stop_mode = VmStopDestroy | VmStopSuspend | VmStopShutdown
 
+type vm_state =
+  | Running of int (* domid *)
+  | Suspended of string (* path *)
+  | Halted
+
 type vm_metadata = {
   vm_name: string;              (* Unique name of the VM, matches kernel filename *)
   memory_kb: int64;             (* VM memory in KiB *)
   bridge: string;               (* Name of the bridge to connect VIF to *)
   query_response_delay : float; (* in seconds, delay after startup before
                                    sending query response *)
+  boot_options : string option; (* Extra parameters to pass to unikernel on boot *)
   vm_ttl : int;                 (* TTL in seconds. VM is stopped [vm_ttl]
                                    seconds after [requested_ts] *)
   how_to_stop : vm_stop_mode;   (* how to stop the VM on timeout *)
@@ -94,10 +100,6 @@ let fallback t _class _type _name =
   >>= fun result ->
   return (Some (Dns.Query.answer_of_response result))
 
-type info =
-  | Running of int (* domid *)
-  | Suspended of string (* path *)
-  | Halted
 
 let string_of_info = function
   | Running _ -> "running"
@@ -127,7 +129,7 @@ let get_vm_state vm =
         if name = vm.vm_name
         then return (Some domid)
         else loop rest
-      | [] -> return None in
+      | [] -> return_none in
       loop domids
     )
   ) >>= function
@@ -151,16 +153,16 @@ let blocking_xenlight f =
     Sys.set_signal Sys.sigchld old_handler;
     raise e
 
-let stop_vm vm =
+let stop_vm t vm =
   get_vm_state vm
   >>= fun state ->
   match state, vm.how_to_stop with
   | Running domid, VmStopShutdown ->
     Xenlight.Domain.shutdown (Lazy.force context) domid;
-    return ()
+    return_unit
   | Running domid, VmStopDestroy  ->
     Xenlight.Domain.destroy (Lazy.force context) domid ();
-    return ()
+    return_unit
   | Running domid, VmStopSuspend  ->
     let filename = suspend_filename vm in
     Lwt_unix.openfile filename [ Unix.O_WRONLY; Unix.O_CREAT ] 0
@@ -170,17 +172,17 @@ let stop_vm vm =
         try
           Xenlight.Domain.suspend (Lazy.force context) domid (Lwt_unix.unix_file_descr fd) ();
         with e ->
-          fprintf stderr "Failed to suspend domain: %s. Will destroy instead.\n%!" (Printexc.to_string e);
+          t.log (Printf.sprintf "Failed to suspend domain: %s. Will destroy instead.\n%!" (Printexc.to_string e));
           Unix.unlink filename;
           ( try
               Xenlight.Domain.destroy (Lazy.force context) domid ()
             with e ->
-              fprintf stderr "Destroy failed too: %s. I'm out of bright ideas.\n%!" (Printexc.to_string e)
+              t.log (Printf.sprintf "Destroy failed too: %s. I'm out of bright ideas.\n%!" (Printexc.to_string e))
           );
       );
     Lwt_unix.close fd
   | (Halted | Suspended _), _ ->
-    return ()
+    return_unit
 
 let domain_config vm =
   let memory_kb = vm.memory_kb in
@@ -200,7 +202,7 @@ let domain_config vm =
   let b_info = Xenlight.Domain_build_info.({ b_info with
     xl_type = Pv { b_info_xl_type with
       kernel = Some vm.vm_name;
-      cmdline = None;
+      cmdline = vm.boot_options;
       ramdisk = None;
     };
   }) in
@@ -340,7 +342,7 @@ let get_base_domain domain =
 
 (* add vm to be monitored by jitsu *)
 let add_vm t ~domain:domain_as_string ~name:vm_name ~bridge ~memory_kb
-    vm_ip stop_mode ~delay:response_delay ~ttl =
+    vm_ip stop_mode ~delay:response_delay ~ttl ~boot_options =
   ( file_readable vm_name
     >>= function
     | false ->
@@ -370,6 +372,7 @@ let add_vm t ~domain:domain_as_string ~name:vm_name ~bridge ~memory_kb
                 vm_name;
                 bridge;
                 memory_kb;
+		boot_options = boot_options;
                 vm_ttl = ttl * 2; (* note *2 here *)
                 query_response_delay = response_delay;
                 started_ts = 0;
@@ -382,6 +385,16 @@ let add_vm t ~domain:domain_as_string ~name:vm_name ~bridge ~memory_kb
   Hashtbl.replace t.domain_table domain_as_list record;
   Hashtbl.replace t.name_table vm_name record;
   return_unit
+
+let stop_vm_by_name t name =
+  match get_vm_metadata_by_name t name with 
+  | None -> t.log (Printf.sprintf "VM %s not found. Not stopping..." name); return_unit
+  | Some meta -> (stop_vm t meta)
+
+let start_vm_by_name t name =
+  match get_vm_metadata_by_name t name with 
+  | None -> t.log (Printf.sprintf "VM %s not found. Not starting..." name); return_unit
+  | Some meta -> (start_vm t meta)
 
 (* iterate through t.name_table and stop VMs that haven't received
    requests for more than ttl*2 seconds *)
@@ -402,11 +415,11 @@ let stop_expired_vms t =
   Hashtbl.iter put_in_array t.name_table;
   let rec loop i =
     if i >= (Array.length expired_vms)
-    then return ()
+    then return_unit
     else match expired_vms.(i) with
     | None -> loop (i + 1)
     | Some vm ->
-      stop_vm vm
+      stop_vm t vm
       >>= fun () ->
       loop (i + 1) in
   loop 0

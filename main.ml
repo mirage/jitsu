@@ -133,7 +133,7 @@ let jitsu bindaddr bindport forwarder forwardport response_delay
          let per_vm (dns,ip,name,memory_kb) =
            log (Printf.sprintf "Adding domain '%s' for VM '%s' with ip %s on bridge %s and %Ld KiB of RAM\n" dns name ip bridge memory_kb);
            Jitsu.add_vm t ~domain:dns ~name ~bridge ~memory_kb (Ipaddr.V4.of_string_exn ip)
-             vm_stop_mode ~delay:response_delay ~ttl
+             vm_stop_mode ~delay:response_delay ~ttl ~boot_options:None
          in
          Lwt_list.iter_p per_vm map_domain
          >>= fun () ->
