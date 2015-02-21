@@ -42,7 +42,7 @@ val process: t -> Dns.Packet.t Dns_server.process
 (** Process function for ocaml-dns. Starts new VMs from DNS queries or
     forwards request to a fallback resolver *)
 
-val add_vm: t -> domain:string -> name:string -> bridge:string -> memory_kb:int64 ->
+val add_vm: t -> domain:string -> name:string -> nics:string list -> memory_kb:int64 ->
   Ipaddr.V4.t -> vm_stop_mode -> delay:float -> ttl:int -> boot_options:(string option) -> unit Lwt.t
 (** [add_vm t domain name bridge memory_kb ip stop_mode delay ttl] adds a VM to be
     monitored by jitsu.  FIXME. *)

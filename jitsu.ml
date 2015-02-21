@@ -30,7 +30,7 @@ type vm_state =
 type vm_metadata = {
   vm_name: string;              (* Unique name of the VM, matches kernel filename *)
   memory_kb: int64;             (* VM memory in KiB *)
-  bridge: string;               (* Name of the bridge to connect VIF to *)
+  nics: string list;  (* Name of the nics to connect VIF to *)
   query_response_delay : float; (* in seconds, delay after startup before
                                    sending query response *)
   boot_options : string option; (* Extra parameters to pass to unikernel on boot *)
@@ -60,11 +60,11 @@ type t = {
 let context = lazy (
   Xenlight.register_exceptions ();
   Printexc.register_printer (function
-    | Xenlight.Error(error, msg) ->
-      Some (Printf.sprintf "Xenlight.Error(%s, %s)" (Xenlight.string_of_error error) msg)
-    | _ ->
-      None
-  );
+      | Xenlight.Error(error, msg) ->
+        Some (Printf.sprintf "Xenlight.Error(%s, %s)" (Xenlight.string_of_error error) msg)
+      | _ ->
+        None
+    );
   let logger =
     let open Xentoollog in
     let vmessage _level errno ctx msg =
@@ -111,9 +111,9 @@ let suspend_filename vm = vm.vm_name ^ ".suspend"
 let file_readable filename =
   Lwt.catch
     (fun () ->
-      Lwt_unix.access filename [ Lwt_unix.R_OK ]
-      >>= fun () ->
-      return true
+       Lwt_unix.access filename [ Lwt_unix.R_OK ]
+       >>= fun () ->
+       return true
     ) (fun _ -> return false)
 
 let get_vm_state vm =
@@ -121,18 +121,18 @@ let get_vm_state vm =
   Xs.make ()
   >>= fun xsc ->
   Xs.(immediate xsc
-    (fun h ->
-      let rec loop = function
-      | domid :: rest ->
-        read h (Printf.sprintf "/local/domain/%d/name" domid)
-        >>= fun name ->
-        if name = vm.vm_name
-        then return (Some domid)
-        else loop rest
-      | [] -> return_none in
-      loop domids
-    )
-  ) >>= function
+        (fun h ->
+           let rec loop = function
+             | domid :: rest ->
+               read h (Printf.sprintf "/local/domain/%d/name" domid)
+               >>= fun name ->
+               if name = vm.vm_name
+               then return (Some domid)
+               else loop rest
+             | [] -> return_none in
+           loop domids
+        )
+     ) >>= function
   | Some domid -> return (Running domid)
   | None ->
     let filename = suspend_filename vm in
@@ -169,16 +169,16 @@ let stop_vm t vm =
     >>= fun fd ->
     blocking_xenlight
       (fun () ->
-        try
-          Xenlight.Domain.suspend (Lazy.force context) domid (Lwt_unix.unix_file_descr fd) ();
-        with e ->
-          t.log (Printf.sprintf "Failed to suspend domain: %s. Will destroy instead.\n%!" (Printexc.to_string e));
-          Unix.unlink filename;
-          ( try
-              Xenlight.Domain.destroy (Lazy.force context) domid ()
-            with e ->
-              t.log (Printf.sprintf "Destroy failed too: %s. I'm out of bright ideas.\n%!" (Printexc.to_string e))
-          );
+         try
+           Xenlight.Domain.suspend (Lazy.force context) domid (Lwt_unix.unix_file_descr fd) ();
+         with e ->
+           t.log (Printf.sprintf "Failed to suspend domain: %s. Will destroy instead.\n%!" (Printexc.to_string e));
+           Unix.unlink filename;
+           ( try
+               Xenlight.Domain.destroy (Lazy.force context) domid ()
+             with e ->
+               t.log (Printf.sprintf "Destroy failed too: %s. I'm out of bright ideas.\n%!" (Printexc.to_string e))
+           );
       );
     Lwt_unix.close fd
   | (Halted | Suspended _), _ ->
@@ -186,35 +186,45 @@ let stop_vm t vm =
 
 let domain_config vm =
   let memory_kb = vm.memory_kb in
-  let bridge = vm.bridge in
+  let nics = vm.nics in
   let context = Lazy.force context in
   let c_info = Xenlight.Domain_create_info.({ (default context ()) with
-    Xenlight.Domain_create_info.xl_type = Xenlight.DOMAIN_TYPE_PV;
-    name = Some vm.vm_name;
-  }) in
+                                              Xenlight.Domain_create_info.xl_type = Xenlight.DOMAIN_TYPE_PV;
+                                              name = Some vm.vm_name;
+                                            }) in
   let b_info = Xenlight.Domain_build_info.({ (default context ~xl_type:Xenlight.DOMAIN_TYPE_PV ()) with
-    Xenlight.Domain_build_info.max_memkb = memory_kb;
-    target_memkb = memory_kb;
-  }) in
+                                             Xenlight.Domain_build_info.max_memkb = memory_kb;
+                                             target_memkb = memory_kb;
+                                           }) in
   let b_info_xl_type = match b_info.Xenlight.Domain_build_info.xl_type with
-  | Xenlight.Domain_build_info.Pv x -> x
-  | _ -> assert false in
+    | Xenlight.Domain_build_info.Pv x -> x
+    | _ -> assert false in
   let b_info = Xenlight.Domain_build_info.({ b_info with
-    xl_type = Pv { b_info_xl_type with
-      kernel = Some vm.vm_name;
-      cmdline = vm.boot_options;
-      ramdisk = None;
-    };
-  }) in
-  let nics = [| Xenlight.Device_nic.({ (default context ()) with
-    Xenlight.Device_nic.mtu = 1500;
-    bridge = Some bridge;
-  }) |] in
+                                             xl_type = Pv { b_info_xl_type with
+                                                            kernel = Some vm.vm_name;
+                                                            cmdline = vm.boot_options;
+                                                            ramdisk = None;
+                                                          };
+                                           }) in
+  let get_xen_nics = 
+     let nics = Array.of_list nics in 
+     Array.init (Array.length nics) 
+         (fun i -> let bridge = Some (Array.get nics i) in
+                Xenlight.Device_nic.({ (default context ()) with
+                                   Xenlight.Device_nic.mtu = 1500;
+                                   bridge;
+                                 })) in
+
+(*  let nics = [| Xenlight.Device_nic.({ (default context ()) with
+                                       Xenlight.Device_nic.mtu = 1500;
+                                       bridge;
+                                     }) |] in*)
+
   Xenlight.Domain_config.({ (default context ()) with
-    c_info;
-    b_info;
-    nics;
-  })
+                            c_info;
+                            b_info;
+                            nics=get_xen_nics;
+                          })
 
 let start_vm t vm =
   let context = Lazy.force context in
@@ -227,32 +237,32 @@ let start_vm t vm =
     return_unit
   | Suspended _ | Halted ->
     ( match state with
-    | Suspended suspend_image ->
-      t.log (Printf.sprintf " --> resuming vm...");
-      Lwt_unix.openfile suspend_image [ Unix.O_RDONLY ] 0
-      >>= fun fd ->
-      let params = Xenlight.Domain_restore_params.default context () in
-      blocking_xenlight
-        (fun () ->
-          try
-            let domid = Xenlight.Domain.create_restore context (domain_config vm) (Lwt_unix.unix_file_descr fd, params) () in
-            Xenlight.Domain.unpause context domid
-          with e ->
-            fprintf stderr "Resume failed with: %s. Consider deleting suspend file %s.\n%!" (Printexc.to_string e) suspend_image
-        );
-      Lwt_unix.close fd
-    | Halted ->
-      t.log (Printf.sprintf " --> creating vm...");
-      blocking_xenlight
-        (fun () ->
-          try
-            let domid = Xenlight.Domain.create_new context (domain_config vm) () in
-            Xenlight.Domain.unpause context domid
-          with e ->
-            fprintf stderr "Create failed with: %s.\n%!" (Printexc.to_string e);
-        );
-      return_unit
-    | _ -> assert false
+      | Suspended suspend_image ->
+        t.log (Printf.sprintf " --> resuming vm...");
+        Lwt_unix.openfile suspend_image [ Unix.O_RDONLY ] 0
+        >>= fun fd ->
+        let params = Xenlight.Domain_restore_params.default context () in
+        blocking_xenlight
+          (fun () ->
+             try
+               let domid = Xenlight.Domain.create_restore context (domain_config vm) (Lwt_unix.unix_file_descr fd, params) () in
+               Xenlight.Domain.unpause context domid
+             with e ->
+               fprintf stderr "Resume failed with: %s. Consider deleting suspend file %s.\n%!" (Printexc.to_string e) suspend_image
+          );
+        Lwt_unix.close fd
+      | Halted ->
+        t.log (Printf.sprintf " --> creating vm...");
+        blocking_xenlight
+          (fun () ->
+             try
+               let domid = Xenlight.Domain.create_new context (domain_config vm) () in
+               Xenlight.Domain.unpause context domid
+             with e ->
+               fprintf stderr "Create failed with: %s.\n%!" (Printexc.to_string e);
+          );
+        return_unit
+      | _ -> assert false
     ) >>= fun () ->
     (* update stats *)
     vm.started_ts <- truncate (Unix.time());
@@ -341,7 +351,7 @@ let get_base_domain domain =
   | _ -> raise (Failure "Invalid domain name")
 
 (* add vm to be monitored by jitsu *)
-let add_vm t ~domain:domain_as_string ~name:vm_name ~bridge ~memory_kb
+let add_vm t ~domain:domain_as_string ~name:vm_name ~nics ~memory_kb
     vm_ip stop_mode ~delay:response_delay ~ttl ~boot_options =
   ( file_readable vm_name
     >>= function
@@ -370,9 +380,9 @@ let add_vm t ~domain:domain_as_string ~name:vm_name ~bridge ~memory_kb
   let record = match existing_record with
     | None -> { how_to_stop = stop_mode;
                 vm_name;
-                bridge;
+                nics;
                 memory_kb;
-		boot_options = boot_options;
+                boot_options = boot_options;
                 vm_ttl = ttl * 2; (* note *2 here *)
                 query_response_delay = response_delay;
                 started_ts = 0;
@@ -417,9 +427,9 @@ let stop_expired_vms t =
     if i >= (Array.length expired_vms)
     then return_unit
     else match expired_vms.(i) with
-    | None -> loop (i + 1)
-    | Some vm ->
-      stop_vm t vm
-      >>= fun () ->
-      loop (i + 1) in
+      | None -> loop (i + 1)
+      | Some vm ->
+        stop_vm t vm
+        >>= fun () ->
+        loop (i + 1) in
   loop 0

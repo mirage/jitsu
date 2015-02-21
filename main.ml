@@ -28,7 +28,7 @@ let info =
      stopped." in
   let man = [
     `S "EXAMPLES";
-    `P "jitsu -f 8.8.8.8 -m destroy --bridge virbr0 mirage.org,10.0.0.1,/unikernels/mirage-www.xen,32768";
+    `P "jitsu -f 8.8.8.8 -m destroy --nics virbr0 domain=mirage.org,ip=10.0.0.1,kernel=/unikernels/mirage-www.xen,mem=32768";
     `P "Start unikernel '/unikernels/mirage-www.xen' with 32MiB of memory and a VIF on virbr0 on requests for mirage.org and \
         return IP 10.0.0.1 when VM is running. Forward unknown requests to \
         8.8.8.8 (Google). Expired VMs are destroyed.";
@@ -65,16 +65,15 @@ let response_delay =
      first TCP request to the VM." in
   Arg.(value & opt float 0.1 & info ["d" ; "delay" ] ~docv:"SECONDS" ~doc)
 
-let bridge =
-  let doc = "Bridge to attach VM NICs to" in
-  Arg.(value & opt string "xenbr0" & info [ "bridge" ] ~docv:"BRIDGE" ~doc)
+let nics =
+  let doc = "Default network interfaces to attach VM NICs to. Multiple NICs can be separated by ','." in
+  Arg.(value & opt (list ~sep:',' string) [ "br0" ] & info [ "nics" ] ~docv:"NIC(S)" ~doc)
 
 let map_domain =
   let doc =
-    "Maps DOMAIN to a VM, IP and memory in KiB. VM must match a VM available through libvirt \
-     (see virsh list --all)." in
-  Arg.(non_empty & pos_all (t4 ~sep:',' string string string int64) [] & info []
-         ~docv:"DOMAIN,IP,VM,KIB" ~doc)
+    "Maps domain, ip, kernel and memory in KiB. Expects keys and values in the form key=val. Valid options vary with backend." in
+  Arg.(non_empty & pos_all (array ~sep:',' (t2 ~sep:'=' string string)) [] & info []
+         ~docv:"domain=...,ip=...,kernel=...,mem=...,nics=" ~doc)
 
 let ttl =
   let doc =
@@ -108,7 +107,7 @@ let or_warn msg f =
 let spinner = [| '-'; '\\'; '|'; '/' |]
 
 let jitsu bindaddr bindport forwarder forwardport response_delay
-    bridge map_domain ttl vm_stop_mode =
+    nics map_domain ttl vm_stop_mode =
   let maintenance_thread t timeout =
     let rec loop i =
       let i = if i >= Array.length spinner then 0 else i in
@@ -130,11 +129,23 @@ let jitsu bindaddr bindport forwarder forwardport response_delay
      let t = Jitsu.create log forward_resolver ttl in
      Lwt.choose [(
          (* main thread, DNS server *)
-         let per_vm (dns,ip,name,memory_kb) =
-           log (Printf.sprintf "Adding domain '%s' for VM '%s' with ip %s on bridge %s and %Ld KiB of RAM\n" dns name ip bridge memory_kb);
-           Jitsu.add_vm t ~domain:dns ~name ~bridge ~memory_kb (Ipaddr.V4.of_string_exn ip)
-             vm_stop_mode ~delay:response_delay ~ttl ~boot_options:None
-         in
+	 let per_vm keyvals = (
+		 let hashmap = (Hashtbl.create (Array.length keyvals)) in
+		 (Array.iter (fun (k,v) -> Hashtbl.add hashmap k v) keyvals); 
+		 let get k = 
+			(Printf.printf "%s=" k;
+			try
+				let v = (Hashtbl.find hashmap k) in
+				Printf.printf "%s\n" v; v
+			with Not_found -> Printf.printf "Missing command line key: %s\n" k; raise Not_found) in
+		 let domain = get "domain" in
+		 let kernel = get "kernel" in
+		 let memory_kb = Int64.of_string (get "mem") in
+		 let ip = Ipaddr.V4.of_string_exn (get "ip") in
+		 log (Printf.sprintf "Adding domain '%s' for VM with kernel '%s' with ip %s on bridge(s) %s and %Ld KiB of RAM\n" domain kernel (Ipaddr.V4.to_string ip) (String.concat "," nics) memory_kb);
+		 Jitsu.add_vm t ~domain:domain  ~name:kernel ~nics ~memory_kb:memory_kb ip
+		    vm_stop_mode ~delay:response_delay ~ttl ~boot_options:(Some (get "extra"))
+	 ) in
          Lwt_list.iter_p per_vm map_domain
          >>= fun () ->
          log (Printf.sprintf "Starting server on %s:%d...\n" bindaddr bindport);
@@ -148,7 +159,7 @@ let jitsu bindaddr bindport forwarder forwardport response_delay
 
 let jitsu_t =
   Term.(pure jitsu $ bindaddr $ bindport $ forwarder $ forwardport
-        $ response_delay $ bridge $ map_domain $ ttl $ vm_stop_mode )
+        $ response_delay $ nics $ map_domain $ ttl $ vm_stop_mode )
 
 let () =
   match Term.eval (jitsu_t, info) with

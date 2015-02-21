@@ -1,4 +1,6 @@
-PKG libvirt
 PKG lwt
 PKG dns.lwt
 PKG cmdliner
+PKG xenlight
+PKG xenstore
+PKG xenstore_transport
