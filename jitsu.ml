@@ -30,7 +30,7 @@ type vm_state =
 type vm_metadata = {
   vm_name: string;              (* Unique name of the VM, matches kernel filename *)
   memory_kb: int64;             (* VM memory in KiB *)
-  nics: string list;  (* Name of the nics to connect VIF to *)
+  nics: string list;            (* Name of the nics to connect VIF to *)
   query_response_delay : float; (* in seconds, delay after startup before
                                    sending query response *)
   boot_options : string option; (* Extra parameters to pass to unikernel on boot *)
@@ -207,18 +207,18 @@ let domain_config vm =
                                                           };
                                            }) in
   let get_xen_nics = 
-     let nics = Array.of_list nics in 
-     Array.init (Array.length nics) 
-         (fun i -> let bridge = Some (Array.get nics i) in
-                Xenlight.Device_nic.({ (default context ()) with
-                                   Xenlight.Device_nic.mtu = 1500;
-                                   bridge;
-                                 })) in
+    let nics = Array.of_list nics in 
+    Array.init (Array.length nics) 
+      (fun i -> let bridge = Some (Array.get nics i) in
+        Xenlight.Device_nic.({ (default context ()) with
+                               Xenlight.Device_nic.mtu = 1500;
+                               bridge;
+                             })) in
 
-(*  let nics = [| Xenlight.Device_nic.({ (default context ()) with
-                                       Xenlight.Device_nic.mtu = 1500;
-                                       bridge;
-                                     }) |] in*)
+  (*  let nics = [| Xenlight.Device_nic.({ (default context ()) with
+                                         Xenlight.Device_nic.mtu = 1500;
+                                         bridge;
+                                       }) |] in*)
 
   Xenlight.Domain_config.({ (default context ()) with
                             c_info;
