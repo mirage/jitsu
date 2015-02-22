@@ -28,7 +28,8 @@ type vm_state =
   | Halted
 
 type vm_metadata = {
-  vm_name: string;              (* Unique name of the VM, matches kernel filename *)
+  vm_name: string;              (* Unique name of the VM *)
+  vm_kernel : string;              (* Kernel file name *)
   memory_kb: int64;             (* VM memory in KiB *)
   nics: string list;            (* Name of the nics to connect VIF to *)
   query_response_delay : float; (* in seconds, delay after startup before
@@ -70,7 +71,8 @@ let context = lazy (
     let vmessage _level errno ctx msg =
       let errno_str = match errno with None -> "" | Some s -> Printf.sprintf ": errno=%d" s
       and ctx_str = match ctx with None -> "" | Some s -> Printf.sprintf "%s" s in
-      Printf.fprintf stderr "%s%s: %s\n%!" ctx_str errno_str msg in
+      (*Printf.fprintf stderr "%s%s: %s\n%!" ctx_str errno_str msg in*)
+      Printf.printf "# %s%s: %s\n" ctx_str errno_str msg in
     let progress _ctx what percent dne total =
       let nl = if dne = total then "\n" else "" in
       Printf.fprintf stderr "\rProgress %s %d%% (%Ld/%Ld)%s" what percent dne total nl in
@@ -106,7 +108,7 @@ let string_of_info = function
   | Suspended _ -> "suspended"
   | Halted -> "halted"
 
-let suspend_filename vm = vm.vm_name ^ ".suspend"
+let suspend_filename vm = vm.vm_kernel ^ "." ^ vm.vm_name ^ ".suspend"
 
 let file_readable filename =
   Lwt.catch
@@ -201,29 +203,24 @@ let domain_config vm =
     | _ -> assert false in
   let b_info = Xenlight.Domain_build_info.({ b_info with
                                              xl_type = Pv { b_info_xl_type with
-                                                            kernel = Some vm.vm_name;
+                                                            kernel = Some vm.vm_kernel;
                                                             cmdline = vm.boot_options;
                                                             ramdisk = None;
                                                           };
                                            }) in
-  let get_xen_nics = 
-    let nics = Array.of_list nics in 
-    Array.init (Array.length nics) 
-      (fun i -> let bridge = Some (Array.get nics i) in
+  let nics = 
+    let n = Array.of_list nics in 
+    Array.init (Array.length n) 
+      (fun i -> let bridge = Some (Array.get n i) in
         Xenlight.Device_nic.({ (default context ()) with
                                Xenlight.Device_nic.mtu = 1500;
                                bridge;
                              })) in
 
-  (*  let nics = [| Xenlight.Device_nic.({ (default context ()) with
-                                         Xenlight.Device_nic.mtu = 1500;
-                                         bridge;
-                                       }) |] in*)
-
   Xenlight.Domain_config.({ (default context ()) with
                             c_info;
                             b_info;
-                            nics=get_xen_nics;
+                            nics;
                           })
 
 let start_vm t vm =
@@ -280,12 +277,13 @@ let get_vm_metadata_by_name t name =
 
 let get_stats vm =
   Printf.sprintf "VM: %s\n\
+                 \ kernel: %s\n\
                  \ total requests: %d\n\
                  \ total starts: %d\n\
                  \ last start: %d\n\
                  \ last request: %d (%d seconds since started)\n\
                  \ vm ttl: %d\n"
-    vm.vm_name vm.total_requests vm.total_starts vm.started_ts vm.requested_ts
+    vm.vm_name vm.vm_kernel vm.total_requests vm.total_starts vm.started_ts vm.requested_ts
     (vm.requested_ts - vm.started_ts) vm.vm_ttl
 
 (* Process function for ocaml-dns. Starts new VMs from DNS queries or
@@ -351,12 +349,12 @@ let get_base_domain domain =
   | _ -> raise (Failure "Invalid domain name")
 
 (* add vm to be monitored by jitsu *)
-let add_vm t ~domain:domain_as_string ~name:vm_name ~nics ~memory_kb
+let add_vm t ~domain:domain_as_string ~name:vm_name ~kernel ~nics ~memory_kb
     vm_ip stop_mode ~delay:response_delay ~ttl ~boot_options =
-  ( file_readable vm_name
+  ( file_readable kernel
     >>= function
     | false ->
-      fprintf stderr "I could not read unikernel image %s\n%!" vm_name;
+      fprintf stderr "I could not read VM kernel %s\n%!" kernel;
       exit (-1)
     | true ->
       return_unit
@@ -380,6 +378,7 @@ let add_vm t ~domain:domain_as_string ~name:vm_name ~nics ~memory_kb
   let record = match existing_record with
     | None -> { how_to_stop = stop_mode;
                 vm_name;
+                vm_kernel=kernel;
                 nics;
                 memory_kb;
                 boot_options = boot_options;

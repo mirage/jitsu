@@ -139,11 +139,12 @@ let jitsu bindaddr bindport forwarder forwardport response_delay
 				Printf.printf "%s\n" v; v
 			with Not_found -> Printf.printf "Missing command line key: %s\n" k; raise Not_found) in
 		 let domain = get "domain" in
+         let name = get "name" in
 		 let kernel = get "kernel" in
 		 let memory_kb = Int64.of_string (get "mem") in
 		 let ip = Ipaddr.V4.of_string_exn (get "ip") in
-		 log (Printf.sprintf "Adding domain '%s' for VM with kernel '%s' with ip %s on bridge(s) %s and %Ld KiB of RAM\n" domain kernel (Ipaddr.V4.to_string ip) (String.concat "," nics) memory_kb);
-		 Jitsu.add_vm t ~domain:domain  ~name:kernel ~nics ~memory_kb:memory_kb ip
+		 log (Printf.sprintf "Adding domain '%s' for VM with name '%s' kernel '%s' with ip %s on bridge(s) %s and %Ld KiB of RAM\n" domain name kernel (Ipaddr.V4.to_string ip) (String.concat "," nics) memory_kb);
+		 Jitsu.add_vm t ~domain:domain  ~name ~kernel ~nics ~memory_kb:memory_kb ip
 		    vm_stop_mode ~delay:response_delay ~ttl ~boot_options:(Some (get "extra"))
 	 ) in
          Lwt_list.iter_p per_vm map_domain
