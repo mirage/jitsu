@@ -32,6 +32,7 @@ type vm_metadata = {
   vm_kernel : string;              (* Kernel file name *)
   memory_kb: int64;             (* VM memory in KiB *)
   nics: string list;            (* Name of the nics to connect VIF to *)
+  vif_hotplug_script: string option;
   query_response_delay : float; (* in seconds, delay after startup before
                                    sending query response *)
   boot_options : string option; (* Extra parameters to pass to unikernel on boot *)
@@ -193,6 +194,7 @@ let domain_config vm =
   let c_info = Xenlight.Domain_create_info.({ (default context ()) with
                                               Xenlight.Domain_create_info.xl_type = Xenlight.DOMAIN_TYPE_PV;
                                               name = Some vm.vm_name;
+                                              run_hotplug_scripts = Some true;
                                             }) in
   let b_info = Xenlight.Domain_build_info.({ (default context ~xl_type:Xenlight.DOMAIN_TYPE_PV ()) with
                                              Xenlight.Domain_build_info.max_memkb = memory_kb;
@@ -208,15 +210,16 @@ let domain_config vm =
                                                             ramdisk = None;
                                                           };
                                            }) in
+  let script = vm.vif_hotplug_script in
   let nics = 
     let n = Array.of_list nics in 
     Array.init (Array.length n) 
       (fun i -> let bridge = Some (Array.get n i) in
         Xenlight.Device_nic.({ (default context ()) with
                                Xenlight.Device_nic.mtu = 1500;
+                               script;
                                bridge;
                              })) in
-
   Xenlight.Domain_config.({ (default context ()) with
                             c_info;
                             b_info;
@@ -349,7 +352,7 @@ let get_base_domain domain =
   | _ -> raise (Failure "Invalid domain name")
 
 (* add vm to be monitored by jitsu *)
-let add_vm t ~domain:domain_as_string ~name:vm_name ~kernel ~nics ~memory_kb
+let add_vm t ~domain:domain_as_string ~name:vm_name ~kernel ~nics ~vif_hotplug_script ~memory_kb
     vm_ip stop_mode ~delay:response_delay ~ttl ~boot_options =
   ( file_readable kernel
     >>= function
@@ -380,6 +383,7 @@ let add_vm t ~domain:domain_as_string ~name:vm_name ~kernel ~nics ~memory_kb
                 vm_name;
                 vm_kernel=kernel;
                 nics;
+                vif_hotplug_script;
                 memory_kb;
                 boot_options = boot_options;
                 vm_ttl = ttl * 2; (* note *2 here *)
