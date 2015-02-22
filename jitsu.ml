@@ -32,7 +32,7 @@ type vm_metadata = {
   vm_kernel : string;              (* Kernel file name *)
   memory_kb: int64;             (* VM memory in KiB *)
   nics: string list;            (* Name of the nics to connect VIF to *)
-  vif_hotplug_script: string option;
+  vif_hotplug_scripts: string list;
   query_response_delay : float; (* in seconds, delay after startup before
                                    sending query response *)
   boot_options : string option; (* Extra parameters to pass to unikernel on boot *)
@@ -210,11 +210,12 @@ let domain_config vm =
                                                             ramdisk = None;
                                                           };
                                            }) in
-  let script = vm.vif_hotplug_script in
   let nics = 
+    let s = Array.of_list vm.vif_hotplug_scripts in
     let n = Array.of_list nics in 
     Array.init (Array.length n) 
       (fun i -> let bridge = Some (Array.get n i) in
+        let script = (match s with [||] -> None | scripts -> Some (Array.get scripts (i mod Array.length scripts))) in
         Xenlight.Device_nic.({ (default context ()) with
                                Xenlight.Device_nic.mtu = 1500;
                                script;
@@ -352,7 +353,7 @@ let get_base_domain domain =
   | _ -> raise (Failure "Invalid domain name")
 
 (* add vm to be monitored by jitsu *)
-let add_vm t ~domain:domain_as_string ~name:vm_name ~kernel ~nics ~vif_hotplug_script ~memory_kb
+let add_vm t ~domain:domain_as_string ~name:vm_name ~kernel ~nics ~vif_hotplug_scripts ~memory_kb
     vm_ip stop_mode ~delay:response_delay ~ttl ~boot_options =
   ( file_readable kernel
     >>= function
@@ -383,7 +384,7 @@ let add_vm t ~domain:domain_as_string ~name:vm_name ~kernel ~nics ~vif_hotplug_s
                 vm_name;
                 vm_kernel=kernel;
                 nics;
-                vif_hotplug_script;
+                vif_hotplug_scripts;
                 memory_kb;
                 boot_options = boot_options;
                 vm_ttl = ttl * 2; (* note *2 here *)

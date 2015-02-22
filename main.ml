@@ -69,6 +69,10 @@ let nics =
   let doc = "Default network interfaces to attach VM NICs to. Multiple NICs can be separated by ','." in
   Arg.(value & opt (list ~sep:',' string) [ "br0" ] & info [ "nics" ] ~docv:"NIC(S)" ~doc)
 
+let scripts =
+  let doc = "Vif configuration scripts. If multiple scripts are specified they will be matched against the list of nics (see --nics) so that the first script is executed with nic 1, the second with nic 2, etc.." in
+  Arg.(value & opt (list ~sep:',' string) [] & info [ "scripts" ] ~docv:"SCRIPT(S)" ~doc)
+
 let map_domain =
   let doc =
     "Maps domain, ip, kernel and memory in KiB. Expects keys and values in the form key=val. Valid options vary with backend." in
@@ -107,7 +111,7 @@ let or_warn msg f =
 let spinner = [| '-'; '\\'; '|'; '/' |]
 
 let jitsu bindaddr bindport forwarder forwardport response_delay
-    nics map_domain ttl vm_stop_mode =
+    nics map_domain scripts ttl vm_stop_mode =
   let maintenance_thread t timeout =
     let rec loop i =
       let i = if i >= Array.length spinner then 0 else i in
@@ -141,11 +145,10 @@ let jitsu bindaddr bindport forwarder forwardport response_delay
 		 let domain = get "domain" in
          let name = get "name" in
 		 let kernel = get "kernel" in
-         let script = (try Some (get "script") with Not_found -> None) in
 		 let memory_kb = Int64.of_string (get "mem") in
 		 let ip = Ipaddr.V4.of_string_exn (get "ip") in
 		 log (Printf.sprintf "Adding domain '%s' for VM with name '%s' kernel '%s' with ip %s on bridge(s) %s and %Ld KiB of RAM\n" domain name kernel (Ipaddr.V4.to_string ip) (String.concat "," nics) memory_kb);
-		 Jitsu.add_vm t ~domain:domain  ~name ~kernel ~nics ~vif_hotplug_script:script ~memory_kb:memory_kb ip
+		 Jitsu.add_vm t ~domain:domain  ~name ~kernel ~nics ~vif_hotplug_scripts:scripts ~memory_kb:memory_kb ip
 		    vm_stop_mode ~delay:response_delay ~ttl ~boot_options:(Some (get "extra"))
 	 ) in
          Lwt_list.iter_p per_vm map_domain
@@ -161,7 +164,7 @@ let jitsu bindaddr bindport forwarder forwardport response_delay
 
 let jitsu_t =
   Term.(pure jitsu $ bindaddr $ bindport $ forwarder $ forwardport
-        $ response_delay $ nics $ map_domain $ ttl $ vm_stop_mode )
+        $ response_delay $ nics $ map_domain $ scripts $ ttl $ vm_stop_mode )
 
 let () =
   match Term.eval (jitsu_t, info) with
