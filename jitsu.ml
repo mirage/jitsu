@@ -75,8 +75,7 @@ let context dolog = lazy (
     let vmessage _level errno ctx msg =
       let errno_str = match errno with None -> "" | Some s -> Printf.sprintf ": errno=%d" s
       and ctx_str = match ctx with None -> "" | Some s -> Printf.sprintf "%s" s in
-      (*Printf.fprintf stderr "%s%s: %s\n%!" ctx_str errno_str msg in*)
-      (if dolog then (Printf.printf "# %s%s: %s\n" ctx_str errno_str msg) else ()) in
+      (if dolog then (Printf.fprintf stderr "# %s%s: %s\n%!" ctx_str errno_str msg) else ()) in
     let progress _ctx what percent dne total =
       let nl = if dne = total then "\n" else "" in
       Printf.fprintf stderr "\rProgress %s %d%% (%Ld/%Ld)%s" what percent dne total nl in
