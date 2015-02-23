@@ -151,9 +151,12 @@ let jitsu bindaddr bindport forwarder forwardport response_delay
 		 let kernel = get "kernel" in
 		 let memory_kb = Int64.of_string (get "mem") in
 		 let ip = Ipaddr.V4.of_string_exn (get "ip") in
-		 log (Printf.sprintf "Adding domain '%s' for VM with name '%s' kernel '%s' with ip %s on bridge(s) %s and %Ld KiB of RAM\n" domain name kernel (Ipaddr.V4.to_string ip) (String.concat "," nics) memory_kb);
+                 let wait = try Some (get "wait-key", get "wait-value") with Not_found -> None in
+		 log (Printf.sprintf "Adding domain '%s' for VM with name '%s' kernel '%s' with ip %s on bridge(s) %s \
+                    and %Ld KiB of RAM wait=[%s]\n" domain name kernel (Ipaddr.V4.to_string ip) (String.concat "," nics) 
+                    memory_kb (match wait with None -> "<naone>" | Some (k,v) -> k ^ "=" ^ v));
 		 Jitsu.add_vm t ~domain:domain  ~name ~kernel ~nics ~vif_hotplug_scripts:scripts ~memory_kb:memory_kb ip
-		    vm_stop_mode ~delay:response_delay ~ttl ~boot_options:(Some (get "extra"))
+		    vm_stop_mode ~delay:response_delay ~ttl ~boot_options:(Some (get "extra")) ~wait
 	 ) in
          Lwt_list.iter_p per_vm map_domain
          >>= fun () ->
