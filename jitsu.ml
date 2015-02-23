@@ -43,6 +43,9 @@ type vm_metadata = {
   mutable requested_ts : int;   (* last request timestamp *)
   mutable total_requests : int;
   mutable total_starts : int;
+
+  (* key/value pari to watch on startup *)
+  wait: (string * string) option;
 }
 
 type t = {
@@ -149,6 +152,28 @@ let get_vm_state t vm =
       >>= function
       | true -> return (Suspended filename)
       | false -> return Halted )
+
+(* wait for the vm to write /local/domain/<domid>/status = "booted" *)
+let wait_until_ready t vm =
+  match vm.wait with
+  | None  -> return_unit
+  | Some (key, value) ->
+  get_vm_state t vm >>= function
+  | Suspended _ | Halted -> assert false
+  | Running domid ->
+    let path = Printf.sprintf "/local/domain/%d/%s" domid key in
+    t.log (Printf.sprintf "Watching: %s...\n%!" path);
+    let safe_read h k =
+      Lwt.catch
+        (fun () -> Xs.read h k >>= fun v -> return (Some v))
+        (function Xs_protocol.Enoent _ -> return_none | e -> fail e)
+    in
+    Xs.make () >>= fun xsc ->
+    Xs.(wait xsc (fun h ->
+      safe_read h path >>= function
+      | None   -> fail Xs_protocol.Eagain
+      | Some x -> if x = value then return_unit else fail Xs_protocol.Eagain
+    ))
 
 let blocking_xenlight f =
   (* Xenlight wants to control SIGCHILD.
@@ -317,6 +342,7 @@ let process t ~src:_ ~dst:_ packet =
               vm.total_requests <- vm.total_requests + 1;
               vm.requested_ts <- int_of_float (Unix.time());
               start_vm t vm >>= fun () ->
+              wait_until_ready t vm >>= fun () ->
               (* print stats *)
               t.log (get_stats vm);
               return (Some answer);
@@ -360,7 +386,7 @@ let get_base_domain domain =
 
 (* add vm to be monitored by jitsu *)
 let add_vm t ~domain:domain_as_string ~name:vm_name ~kernel ~nics ~vif_hotplug_scripts ~memory_kb
-    vm_ip stop_mode ~delay:response_delay ~ttl ~boot_options =
+    vm_ip stop_mode ~delay:response_delay ~ttl ~boot_options ~wait =
   ( file_readable kernel
     >>= function
     | false ->
@@ -398,7 +424,8 @@ let add_vm t ~domain:domain_as_string ~name:vm_name ~kernel ~nics ~vif_hotplug_s
                 started_ts = 0;
                 requested_ts = 0;
                 total_requests = 0;
-                total_starts = 0 }
+                total_starts = 0;
+                wait;  }
     | Some existing_record -> existing_record
   in
   (* add/replace in both hash tables *)
