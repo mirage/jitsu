@@ -38,6 +38,10 @@ let info =
     `P "Submit bug reports to http://github.com/magnuss/jitsu";] in
   Term.info "jitsu" ~version:"0.1-alpha" ~doc ~man
 
+let debug =
+  let doc = "Enable additional logging from backend" in
+  Arg.(value & flag & info ["debug"] ~doc)
+
 let bindaddr =
   let doc = "Bind local DNS server to interface with this IP" in
   Arg.(value & opt string "127.0.0.1" & info ["b"; "bind"] ~docv:"ADDR" ~doc)
@@ -111,7 +115,7 @@ let or_warn msg f =
 let spinner = [| '-'; '\\'; '|'; '/' |]
 
 let jitsu bindaddr bindport forwarder forwardport response_delay
-    nics map_domain scripts ttl vm_stop_mode =
+    nics map_domain scripts ttl vm_stop_mode debug =
   let maintenance_thread t timeout =
     let rec loop i =
       let i = if i >= Array.length spinner then 0 else i in
@@ -130,7 +134,7 @@ let jitsu bindaddr bindport forwarder forwardport response_delay
           Dns_resolver_unix.create ~config:config ()
       )
      >>= fun forward_resolver ->
-     let t = Jitsu.create log forward_resolver ttl in
+     let t = Jitsu.create log forward_resolver ttl debug in
      Lwt.choose [(
          (* main thread, DNS server *)
 	 let per_vm keyvals = (
@@ -164,7 +168,7 @@ let jitsu bindaddr bindport forwarder forwardport response_delay
 
 let jitsu_t =
   Term.(pure jitsu $ bindaddr $ bindport $ forwarder $ forwardport
-        $ response_delay $ nics $ map_domain $ scripts $ ttl $ vm_stop_mode )
+        $ response_delay $ nics $ map_domain $ scripts $ ttl $ vm_stop_mode $ debug)
 
 let () =
   match Term.eval (jitsu_t, info) with

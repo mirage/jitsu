@@ -35,7 +35,7 @@ type vm_state =
   | Suspended of string (* path *)
   | Halted
 
-val create: (string -> unit) -> Dns_resolver_unix.t -> int -> t
+val create: (string -> unit) -> Dns_resolver_unix.t -> int -> bool -> t
 (** [create resolver vm_count] creates a new Jitsu instance. FIXME. *)
 
 val process: t -> Dns.Packet.t Dns_server.process
