@@ -55,12 +55,14 @@ type t = {
   (* vm hash table indexed by domain *)
   name_table : (string, vm_metadata) Hashtbl.t;
   (* vm hash table indexed by vm name *)
+
+  context : Xenlight.ctx Lazy.t
 }
 
 (* All libxl calls need one of these to say where the logs should go.
    We delay the creation because it can fail (e.g. due to insufficient privileges)
    and we would still like people to be able to consult command-line arguments *)
-let context t = lazy (
+let context dolog = lazy (
   Xenlight.register_exceptions ();
   Printexc.register_printer (function
       | Xenlight.Error(error, msg) ->
@@ -74,7 +76,7 @@ let context t = lazy (
       let errno_str = match errno with None -> "" | Some s -> Printf.sprintf ": errno=%d" s
       and ctx_str = match ctx with None -> "" | Some s -> Printf.sprintf "%s" s in
       (*Printf.fprintf stderr "%s%s: %s\n%!" ctx_str errno_str msg in*)
-      (if t.debug then (Printf.printf "# %s%s: %s\n" ctx_str errno_str msg) else ()) in
+      (if dolog then (Printf.printf "# %s%s: %s\n" ctx_str errno_str msg) else ()) in
     let progress _ctx what percent dne total =
       let nl = if dne = total then "\n" else "" in
       Printf.fprintf stderr "\rProgress %s %d%% (%Ld/%Ld)%s" what percent dne total nl in
@@ -97,7 +99,9 @@ let create log forward_resolver vm_count debug =
     debug;
     forward_resolver = forward_resolver;
     domain_table = Hashtbl.create ~random:true vm_count;
-    name_table = Hashtbl.create ~random:true vm_count }
+    name_table = Hashtbl.create ~random:true vm_count;
+    context = context debug;
+  }
 
 (* fallback to external resolver if local lookup fails *)
 let fallback t _class _type _name =
@@ -122,7 +126,7 @@ let file_readable filename =
     ) (fun _ -> return false)
 
 let get_vm_state t vm =
-  let domids = List.map (fun di -> di.Xenlight.Dominfo.domid) (Xenlight.Dominfo.list (Lazy.force (context t))) in
+  let domids = List.map (fun di -> di.Xenlight.Dominfo.domid) (Xenlight.Dominfo.list (Lazy.force t.context)) in
   Xs.make ()
   >>= fun xsc ->
   Xs.(immediate xsc
@@ -163,10 +167,10 @@ let stop_vm t vm =
   >>= fun state ->
   match state, vm.how_to_stop with
   | Running domid, VmStopShutdown ->
-    Xenlight.Domain.shutdown (Lazy.force (context t)) domid;
+    Xenlight.Domain.shutdown (Lazy.force t.context) domid;
     return_unit
   | Running domid, VmStopDestroy  ->
-    Xenlight.Domain.destroy (Lazy.force (context t)) domid ();
+    Xenlight.Domain.destroy (Lazy.force t.context) domid ();
     return_unit
   | Running domid, VmStopSuspend  ->
     let filename = suspend_filename vm in
@@ -175,12 +179,12 @@ let stop_vm t vm =
     blocking_xenlight
       (fun () ->
          try
-           Xenlight.Domain.suspend (Lazy.force (context t)) domid (Lwt_unix.unix_file_descr fd) ();
+           Xenlight.Domain.suspend (Lazy.force t.context) domid (Lwt_unix.unix_file_descr fd) ();
          with e ->
            t.log (Printf.sprintf "Failed to suspend domain: %s. Will destroy instead.\n%!" (Printexc.to_string e));
            Unix.unlink filename;
            ( try
-               Xenlight.Domain.destroy (Lazy.force (context t)) domid ()
+               Xenlight.Domain.destroy (Lazy.force t.context) domid ()
              with e ->
                t.log (Printf.sprintf "Destroy failed too: %s. I'm out of bright ideas.\n%!" (Printexc.to_string e))
            );
@@ -192,7 +196,7 @@ let stop_vm t vm =
 let domain_config t vm =
   let memory_kb = vm.memory_kb in
   let nics = vm.nics in
-  let context = Lazy.force (context t) in
+  let context = Lazy.force t.context in
   let c_info = Xenlight.Domain_create_info.({ (default context ()) with
                                               Xenlight.Domain_create_info.xl_type = Xenlight.DOMAIN_TYPE_PV;
                                               name = Some vm.vm_name;
@@ -230,7 +234,7 @@ let domain_config t vm =
                           })
 
 let start_vm t vm =
-  let context = Lazy.force (context t) in
+  let context = Lazy.force t.context in
   get_vm_state t vm
   >>= fun state ->
   t.log (Printf.sprintf "Starting %s (%s)" vm.vm_name (string_of_info state));
