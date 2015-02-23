@@ -152,6 +152,8 @@ let get_vm_state t vm =
       | true -> return (Suspended filename)
       | false -> return Halted )
 
+let log t fmt = Printf.ksprintf (fun str -> t.log (str ^ "\n")) fmt
+
 (* wait for the vm to write /local/domain/<domid>/status = "booted" *)
 let wait_until_ready t vm =
   match vm.wait with
@@ -168,11 +170,13 @@ let wait_until_ready t vm =
         (function Xs_protocol.Enoent _ -> return_none | e -> fail e)
     in
     Xs.make () >>= fun xsc ->
-    Xs.(wait xsc (fun h ->
+    Xs.wait xsc (fun h ->
       safe_read h path >>= function
       | None   -> fail Xs_protocol.Eagain
       | Some x -> if x = value then return_unit else fail Xs_protocol.Eagain
-    ))
+    ) >>= fun () ->
+    log t "the VM is ready!";
+    return_unit
 
 let blocking_xenlight f =
   (* Xenlight wants to control SIGCHILD.
