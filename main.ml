@@ -1,5 +1,6 @@
 (*
- * Copyright (c) 2014 Magnus Skjegstad <magnus@skjegstad.com>
+ * Copyright (c) 2014-2015 Magnus Skjegstad <magnus@skjegstad.com>
+ * Copyright (c) 2015 Citrix Inc <dave.scott@citrix.com>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
