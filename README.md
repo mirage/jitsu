@@ -7,18 +7,17 @@ Jitsu is mainly intended for use with Xen
 
 ## Getting started ##
 
-Jitsu requires several external libraries from
-[opam](https://opam.ocaml.org). Run make to compile:
+Jitsu can be installed using opam:
 
 ```
-make install-deps
-make
+opam pin add jitsu 'https://github.com/MagnusS/jitsu.git#dev'
+opam install jitsu
 ```
 
-You should now be able to start jitsu:
+If the installation succeeds you should now be able to start jitsu:
 
 ```
-sudo ./jitsu --bridge=xenbr0 www.openmirage.org,192.168.0.22,/unikernels/mirage-www.xen,32768
+sudo ./jitsu --nics=xenbr0 name=openmirage,domain=www.openmirage.org,ip=192.168.0.22,kernel=/unikernels/mirage-www.xen,mem=32768
 ```
 
 The command above connects to a local Xen-server (from dom0) through libxl and starts the DNS server.
