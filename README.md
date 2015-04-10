@@ -6,14 +6,22 @@ Although Jitsu can be used with any VM that can be controlled with libvirt, it i
 
 ## Getting started ##
 
-Jitsu requires the libraries dns, lwt, libvirt and cmdliner, which can be installed with [opam](https://opam.ocaml.org). Run make to compile:
-
-```
-opam install dns lwt libvirt cmdliner
-make
+Jitsu depends on libvirt to manage VMs. To install libvirt on Debian/Ubuntu run `sudo apt-get install libvirt-bin`, on OSX run `brew install libvirt`.
 ```
 
-You should now be able to start jitsu:
+To install the OCaml libvirt bindings on OS X we have to set CPPFLAGS first (due to this [bug](https://github.com/ocaml/opam-repository/issues/2621)). This step can be skipped on other platforms.
+```
+CPPFLAGS="-Wno-error=tautological-compare -Wno-error=unused-function"  opam install libvirt
+```
+
+Jitsu can now be installed with opam:
+
+```
+opam pin add jitsu 'https://github.com/MagnusS/jitsu.git'
+opam install jitsu
+```
+
+If the installation succeeds you should now be able to start jitsu:
 
 ```
 sudo ./jitsu www.openmirage.org,192.168.0.22,mirage-www -c xen:/// 
