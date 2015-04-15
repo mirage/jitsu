@@ -23,6 +23,7 @@ type vm_stop_mode = VmStopDestroy | VmStopSuspend | VmStopShutdown
 type vm_metadata = {
   vm_name : string;             (* Unique name of VM. Matches name in libvirt *)
   domain : rw Libvirt.Domain.t; (* Libvirt data structure for this VM *)
+  mac : Macaddr.t option;       (* MAC addr of this domain, if known. Used for gARP *)
   query_response_delay : float; (* in seconds, delay after startup before
                                    sending query response *)
   vm_ttl : int;                 (* TTL in seconds. VM is stopped [vm_ttl]
@@ -213,11 +214,28 @@ let get_base_domain domain =
   | _::domain::[tld] | domain::[tld] -> ([domain ; tld] :> Name.domain_name)
   | _ -> raise (Failure "Invalid domain name")
 
+(* get mac address for domain - TODO only supports one interface *)
+let get_mac domain =
+  let dom_xml_s = try_libvirt "Unable to retrieve XML description of domain" (fun () -> Libvirt.Domain.get_xml_desc domain) in
+  (*Printf.printf "xml is %s" dom_xml_s;*)
+  try
+      let (_, dom_xml) = Ezxmlm.from_string dom_xml_s in
+      let (mac_attr, _) = Ezxmlm.member "domain" dom_xml |> Ezxmlm.member "devices" |> Ezxmlm.member "interface" |> Ezxmlm.member_with_attr "mac" in
+      let mac_s = Ezxmlm.get_attr "address" mac_attr in
+      Macaddr.of_string mac_s
+  with
+  | Not_found -> None
+  | Ezxmlm.Tag_not_found _ -> None
+
 (* add vm to be monitored by jitsu *)
 let add_vm t ~domain:domain_as_string ~name:vm_name vm_ip stop_mode
     ~delay:response_delay ~ttl =
   (* check if vm_name exists and set up VM record *)
   let vm_dom = try_libvirt "Unable to lookup VM by name" (fun () -> Libvirt.Domain.lookup_by_name t.connection vm_name) in
+  let mac = get_mac vm_dom in
+  (match mac with
+  | Some m -> t.log (Printf.sprintf "Domain registered with MAC %s\n" (Macaddr.to_string m))
+  | None -> t.log (Printf.sprintf "Warning: MAC not found for domain. gARP will not be sent.\n"));
   (* check if SOA is registered and domain is ok *)
   let domain_as_list = Name.string_to_domain_name domain_as_string in
   let base_domain = get_base_domain domain_as_list in
@@ -236,6 +254,7 @@ let add_vm t ~domain:domain_as_string ~name:vm_name vm_ip stop_mode
   (* reuse existing record if possible *)
   let record = match existing_record with
     | None -> { domain = vm_dom;
+                mac;
                 how_to_stop = stop_mode;
                 vm_name = vm_name;
                 vm_ttl = ttl * 2; (* note *2 here *)

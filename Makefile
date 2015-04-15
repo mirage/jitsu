@@ -1,4 +1,4 @@
-PACKAGES=-package str,lwt,dns.lwt,libvirt,cmdliner
+PACKAGES=-package str,lwt,dns.lwt,libvirt,cmdliner,ezxmlm,ipaddr
 INCLUDE=
 OPT=-linkpkg -g 
 OCAMLOPT=ocamlopt -w A-4-44

@@ -8,7 +8,9 @@ build: [
 depends: [  "lwt" 
             "dns" 
             "cmdliner" 
-            "libvirt" ]
+            "libvirt" 
+            "ipaddr"
+            "ezxmlm" ]
 depexts: [
   [["debian"] ["libvirt-bin"]]
   [["ubuntu"] ["libvirt-bin"]]
