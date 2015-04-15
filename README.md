@@ -6,7 +6,7 @@ Although Jitsu can be used with any VM that can be controlled with libvirt, it i
 
 ## Getting started ##
 
-Jitsu depends on libvirt to manage VMs. To install libvirt on Debian/Ubuntu run `sudo apt-get install libvirt-bin`, on OSX run `brew install libvirt`.
+Jitsu depends on libvirt to manage VMs. To install libvirt on Debian/Ubuntu run `sudo apt-get install libvirt-bin libvirt-dev`, on OSX run `brew install libvirt`.
 
 To install the OCaml libvirt bindings on OS X we have to set CPPFLAGS first (due to this [bug](https://github.com/ocaml/opam-repository/issues/2621)). This step can be skipped on other platforms.
 
