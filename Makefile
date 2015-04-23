@@ -12,7 +12,7 @@ all: $(BIN)/jitsu
 
 $(BIN)/jitsu: $(SRC)/jitsu.ml $(SRC)/main.ml $(SRC)/synjitsu.ml
 	mkdir -p $(BIN)
-	cd $(SRC) ; ocamlfind $(OCAMLOPT) $(INCLUDE) $(PACKAGES) $(OPT) $(FILES) -o $(BIN)/jitsu 
+	cd $(SRC) ; ocamlfind $(OCAMLOPT) $(INCLUDE) $(PACKAGES) $(OPT) $(FILES) -o $(BIN)/jitsu -syntax camlp4o
 
 install: $(BIN)/jitsu
 	@echo "Installing jitsu in $(INSTALLDIR)..."
