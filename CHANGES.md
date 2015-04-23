@@ -7,6 +7,7 @@
 - libvirt-dev added as depext in Debian and Ubuntu
 - conduit and vchan added as opam dependencies
 - Removed version number from opam file in dev repo
+- Destroyed domains can now be restarted (fixes #8)
 
 0.1 
 - First public release

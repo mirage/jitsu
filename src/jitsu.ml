@@ -22,7 +22,7 @@ type vm_stop_mode = VmStopDestroy | VmStopSuspend | VmStopShutdown
 
 type vm_metadata = {
   vm_name : string;             (* Unique name of VM. Matches name in libvirt *)
-  domain : rw Libvirt.Domain.t; (* Libvirt data structure for this VM *)
+  vm_uuid : Libvirt.uuid;       (* Libvirt data structure for this VM *)
 
   mac : Macaddr.t option;       (* MAC addr of this domain, if known. Used for gARP *)
   ip : Ipaddr.V4.t;                (* IP addr of this domain *)
@@ -87,40 +87,43 @@ let string_of_vm_state = function
   | Libvirt.Domain.InfoShutoff -> "shutoff"
   | Libvirt.Domain.InfoCrashed -> "crashed"
 
-let get_vm_info vm =
-  try_libvirt "Unable to get VM info" (fun () -> Libvirt.Domain.get_info vm.domain)
+let lookup_uuid t vm_uuid =
+  try_libvirt (Printf.sprintf "Unable to find VM by UUID %s" vm_uuid) (fun () -> Libvirt.Domain.lookup_by_uuid t.connection vm_uuid)
 
-let get_vm_state vm =
-  let info = get_vm_info vm in
+let get_vm_info t vm =
+  try_libvirt "Unable to get VM info" (fun () -> Libvirt.Domain.get_info (lookup_uuid t vm.vm_uuid))
+
+let get_vm_state t vm =
+  let info = get_vm_info t vm in
   try_libvirt "Unable to get VM state" (fun () -> info.Libvirt.Domain.state)
 
-let destroy_vm vm =
-  try_libvirt "Unable to destroy VM" (fun () -> Libvirt.Domain.destroy vm.domain)
+let destroy_vm t vm =
+  try_libvirt "Unable to destroy VM" (fun () -> Libvirt.Domain.destroy (lookup_uuid t vm.vm_uuid))
 
-let shutdown_vm vm =
-  try_libvirt "Unable to shutdown VM" (fun () -> Libvirt.Domain.shutdown vm.domain)
+let shutdown_vm t vm =
+  try_libvirt "Unable to shutdown VM" (fun () -> Libvirt.Domain.shutdown (lookup_uuid t vm.vm_uuid))
 
-let suspend_vm vm =
-  try_libvirt "Unable to suspend VM" (fun () -> Libvirt.Domain.suspend vm.domain)
+let suspend_vm t vm =
+  try_libvirt "Unable to suspend VM" (fun () -> Libvirt.Domain.suspend (lookup_uuid t vm.vm_uuid))
 
-let resume_vm vm =
-  try_libvirt "Unable to resume VM" (fun () -> Libvirt.Domain.resume vm.domain)
+let resume_vm t vm =
+  try_libvirt "Unable to resume VM" (fun () -> Libvirt.Domain.resume (lookup_uuid t vm.vm_uuid))
 
-let create_vm vm =
-  try_libvirt "Unable to create VM" (fun () -> Libvirt.Domain.create vm.domain)
+let create_vm t vm =
+  try_libvirt "Unable to create VM" (fun () -> Libvirt.Domain.create (lookup_uuid t vm.vm_uuid))
 
 let stop_vm t vm =
-  match get_vm_state vm with
+  match get_vm_state t vm with
   | Libvirt.Domain.InfoRunning ->
     begin match vm.how_to_stop with
-      | VmStopShutdown -> t.log (Printf.sprintf "VM shutdown: %s\n" vm.vm_name); shutdown_vm vm
-      | VmStopSuspend  -> t.log (Printf.sprintf "VM suspend: %s\n" vm.vm_name) ; suspend_vm vm
-      | VmStopDestroy  -> t.log (Printf.sprintf "VM destroy: %s\n" vm.vm_name) ; destroy_vm vm
+      | VmStopShutdown -> t.log (Printf.sprintf "VM shutdown: %s\n" vm.vm_name); shutdown_vm t vm
+      | VmStopSuspend  -> t.log (Printf.sprintf "VM suspend: %s\n" vm.vm_name) ; suspend_vm t vm
+      | VmStopDestroy  -> t.log (Printf.sprintf "VM destroy: %s\n" vm.vm_name) ; destroy_vm t vm
     end
   | _ -> ()
 
 let start_vm t vm =
-  let state = get_vm_state vm in
+  let state = get_vm_state t vm in
   t.log (Printf.sprintf "Starting %s (%s)" vm.vm_name (string_of_vm_state state));
   match state with
   | Libvirt.Domain.InfoPaused | Libvirt.Domain.InfoShutdown
@@ -128,10 +131,10 @@ let start_vm t vm =
     let () = match state with
       | Libvirt.Domain.InfoPaused ->
         t.log " --> resuming vm...\n";
-        resume_vm vm
+        resume_vm t vm
       | _ ->
         t.log " --> creating vm...\n";
-        create_vm vm
+        create_vm t vm
     in
     (* Notify Synjitsu *)
     (match vm.mac with
@@ -154,11 +157,11 @@ let start_vm t vm =
     Lwt_unix.sleep vm.query_response_delay
   | Libvirt.Domain.InfoRunning ->
     t.log " --! VM is already running\n";
-    return_unit
+    Lwt.return_unit
   | Libvirt.Domain.InfoBlocked | Libvirt.Domain.InfoCrashed
   | Libvirt.Domain.InfoNoState ->
     t.log " --! VM cannot be started from this state.\n";
-    return_unit
+    Lwt.return_unit
 
 let get_vm_metadata_by_domain t domain =
   try Some (Hashtbl.find t.domain_table domain)
@@ -258,6 +261,7 @@ let add_vm t ~domain:domain_as_string ~name:vm_name vm_ip stop_mode
     ~delay:response_delay ~ttl =
   (* check if vm_name exists and set up VM record *)
   let vm_dom = try_libvirt "Unable to lookup VM by name" (fun () -> Libvirt.Domain.lookup_by_name t.connection vm_name) in
+  let vm_uuid = try_libvirt (Printf.sprintf "Unable to get uuid for %s" vm_name) (fun () -> Libvirt.Domain.get_uuid vm_dom) in
   let mac = get_mac vm_dom in
   (match mac with
   | Some m -> t.log (Printf.sprintf "Domain registered with MAC %s\n" (Macaddr.to_string m))
@@ -279,11 +283,11 @@ let add_vm t ~domain:domain_as_string ~name:vm_name vm_ip stop_mode
   let existing_record = (get_vm_metadata_by_name t vm_name) in
   (* reuse existing record if possible *)
   let record = match existing_record with
-    | None -> { domain = vm_dom;
+    | None -> { vm_name;
+                vm_uuid;
                 mac;
                 ip=vm_ip;
                 how_to_stop = stop_mode;
-                vm_name = vm_name;
                 vm_ttl = ttl * 2; (* note *2 here *)
                 query_response_delay = response_delay;
                 started_ts = 0;
