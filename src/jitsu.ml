@@ -55,13 +55,13 @@ let try_libvirt msg f =
   try f () with
   | Libvirt.Virterror e -> raise (Failure (Printf.sprintf "%s: %s" msg (Libvirt.Virterror.to_string e)))
 
-let create log connstr forward_resolver ?vm_count:(vm_count=7) ?use_synjitsu:(use_synjitsu=true) () =
+let create log connstr forward_resolver ?vm_count:(vm_count=7) ?use_synjitsu:(use_synjitsu=None) () =
   let connection = try_libvirt "Unable to connect" (fun () -> Libvirt.Connect.connect ~name:connstr ()) in
   let synjitsu = match use_synjitsu with
-  | true -> let t = (Synjitsu.create connection log "synjitsu" "synjitsu") in
+  | Some domain -> let t = (Synjitsu.create connection log domain "synjitsu") in
             ignore_result (Synjitsu.connect t);  (* connect in background *)
             Some t
-  | false -> None
+  | None -> None
   in
   { db = Loader.new_db ();
     log = log; 
