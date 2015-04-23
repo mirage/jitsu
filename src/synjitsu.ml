@@ -60,12 +60,12 @@ let connect t =
             let domain = (
                 try
                     try_libvirt "synjitsu: could not find domain by uuid\n" (fun () -> Libvirt.Domain.lookup_by_uuid t.backend_conn t.synjitsu_domain)
-                with exn -> 
+                with _ -> 
                     try_libvirt "synjitsu: could not find domain by name (or uuid)\n" (fun () -> Libvirt.Domain.lookup_by_name t.backend_conn t.synjitsu_domain)
             ) in
             let client = `Vchan_direct (`Domid (Libvirt.Domain.get_id domain), `Port t.synjitsu_port) in
             Conduit_lwt_unix.init () >>= fun ctx ->
-            Conduit_lwt_unix.connect ~ctx client >>= fun (flow, ic, oc) ->
+            Conduit_lwt_unix.connect ~ctx client >>= fun (_, ic, oc) ->
             t.log "synjitsu: Connected\n";
             t.ic := Some ic;
             t.oc := Some oc;
