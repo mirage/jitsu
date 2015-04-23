@@ -4,3 +4,8 @@ PKG dns.lwt
 PKG cmdliner
 PKG ezxmlm
 PKG ipaddr
+PKG cstruct
+PKG conduit
+PKG vchan
+
+S lwt
