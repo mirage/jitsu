@@ -1,6 +1,5 @@
 opam-version: "1.2"
 name: "jitsu"
-version: "0.1"
 maintainer: "Magnus Skjegstad <magnus@skjegstad.com>"
 build: [
   [make]
@@ -10,9 +9,11 @@ depends: [  "lwt"
             "cmdliner" 
             "libvirt" 
             "ipaddr"
-            "ezxmlm" ]
+            "ezxmlm" 
+            "conduit"
+            "vchan" ]
 depexts: [
-  [["debian"] ["libvirt-bin"]]
-  [["ubuntu"] ["libvirt-bin"]]
+  [["debian"] ["libvirt-bin" "libvirt-dev"]]
+  [["ubuntu"] ["libvirt-bin" "libvirt-dev"]]
   [["osx" "homebrew"] ["libvirt"]]
 ]
