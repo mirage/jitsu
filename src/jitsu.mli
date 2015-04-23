@@ -30,7 +30,7 @@ type vm_stop_mode = VmStopDestroy | VmStopSuspend | VmStopShutdown
 type t
 (** The type of Jitsu states. *)
 
-val create: (string -> unit) -> string -> Dns_resolver_unix.t -> int -> t
+val create: (string -> unit) -> string -> Dns_resolver_unix.t -> ?vm_count:int -> ?use_synjitsu:bool -> unit -> t
 (** [create log_function name resolver vm_count] creates a new Jitsu instance. FIXME. *)
 
 val process: t -> Dns.Packet.t Dns_server.process

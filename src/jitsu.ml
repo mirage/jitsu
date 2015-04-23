@@ -23,7 +23,10 @@ type vm_stop_mode = VmStopDestroy | VmStopSuspend | VmStopShutdown
 type vm_metadata = {
   vm_name : string;             (* Unique name of VM. Matches name in libvirt *)
   domain : rw Libvirt.Domain.t; (* Libvirt data structure for this VM *)
+
   mac : Macaddr.t option;       (* MAC addr of this domain, if known. Used for gARP *)
+  ip : Ipaddr.V4.t;                (* IP addr of this domain *)
+
   query_response_delay : float; (* in seconds, delay after startup before
                                    sending query response *)
   vm_ttl : int;                 (* TTL in seconds. VM is stopped [vm_ttl]
@@ -41,6 +44,7 @@ type t = {
   connection : rw Libvirt.Connect.t;      (* connection to libvirt *)
   forward_resolver : Dns_resolver_unix.t; (* DNS to forward request to if no
                                              local match *)
+  synjitsu : Synjitsu.t option;
   domain_table : (Name.domain_name, vm_metadata) Hashtbl.t;
   (* vm hash table indexed by domain *)
   name_table : (string, vm_metadata) Hashtbl.t;
@@ -51,11 +55,19 @@ let try_libvirt msg f =
   try f () with
   | Libvirt.Virterror e -> raise (Failure (Printf.sprintf "%s: %s" msg (Libvirt.Virterror.to_string e)))
 
-let create log connstr forward_resolver vm_count =
+let create log connstr forward_resolver ?vm_count:(vm_count=7) ?use_synjitsu:(use_synjitsu=true) () =
+  let connection = try_libvirt "Unable to connect" (fun () -> Libvirt.Connect.connect ~name:connstr ()) in
+  let synjitsu = match use_synjitsu with
+  | true -> let t = (Synjitsu.create connection log "synjitsu" "synjitsu") in
+            ignore_result (Synjitsu.connect t);  (* connect in background *)
+            Some t
+  | false -> None
+  in
   { db = Loader.new_db ();
     log = log; 
-    connection = try_libvirt "Unable to connect" (fun () -> Libvirt.Connect.connect ~name:connstr ());
+    connection;
     forward_resolver = forward_resolver;
+    synjitsu;
     domain_table = Hashtbl.create ~random:true vm_count;
     name_table = Hashtbl.create ~random:true vm_count }
 
@@ -121,6 +133,20 @@ let start_vm t vm =
         t.log " --> creating vm...\n";
         create_vm vm
     in
+    (* Notify Synjitsu *)
+    (match vm.mac with
+      | Some m -> 
+              (match t.synjitsu with
+              | Some s -> (
+                  t.log (Printf.sprintf "Notifying Synjitsu of MAC %s\n" (Macaddr.to_string m));
+                  (try_lwt 
+                    Synjitsu.send_garp s m vm.ip
+                  with 
+                    e -> t.log (Printf.sprintf "Got exception %s\n" (Printexc.to_string e)); 
+                         Lwt.return_unit))
+              | None -> Lwt.return_unit)
+      | None -> Lwt.return_unit)
+    >>= fun _ ->
     (* update stats *)
     vm.started_ts <- truncate (Unix.time());
     vm.total_starts <- vm.total_starts + 1;
@@ -235,7 +261,7 @@ let add_vm t ~domain:domain_as_string ~name:vm_name vm_ip stop_mode
   let mac = get_mac vm_dom in
   (match mac with
   | Some m -> t.log (Printf.sprintf "Domain registered with MAC %s\n" (Macaddr.to_string m))
-  | None -> t.log (Printf.sprintf "Warning: MAC not found for domain. gARP will not be sent.\n"));
+  | None -> t.log (Printf.sprintf "Warning: MAC not found for domain. Synjitsu will not be notified..\n"));
   (* check if SOA is registered and domain is ok *)
   let domain_as_list = Name.string_to_domain_name domain_as_string in
   let base_domain = get_base_domain domain_as_list in
@@ -255,6 +281,7 @@ let add_vm t ~domain:domain_as_string ~name:vm_name vm_ip stop_mode
   let record = match existing_record with
     | None -> { domain = vm_dom;
                 mac;
+                ip=vm_ip;
                 how_to_stop = stop_mode;
                 vm_name = vm_name;
                 vm_ttl = ttl * 2; (* note *2 here *)
