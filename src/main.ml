@@ -40,7 +40,7 @@ let info =
     `P "Magnus Skjegstad <magnus@skjegstad.com>" ;
     `S "BUGS";
     `P "Submit bug reports to http://github.com/magnuss/jitsu";] in
-  Term.info "jitsu" ~version:"0.1-alpha" ~doc ~man
+  Term.info "jitsu" ~version:"0.2-alpha" ~doc ~man
 
 let bindaddr =
   let doc = "Bind local DNS server to interface with this IP" in
@@ -100,6 +100,16 @@ let vm_stop_mode =
                           ("shutdown", Jitsu.VmStopShutdown)])
          Jitsu.VmStopSuspend & info ["m" ; "mode" ] ~docv:"MODE" ~doc)
 
+let synjitsu_domain_uuid =
+  let doc =
+     "UUID or domain name of a Synjitsu compatible unikernel. When specified, \
+      Jitsu will attempt to connect to this domain over Vchan on port 'synjitsu' \
+      and send notifications with updates on MAC- and IP-addresses of booted \
+      unikernels. This allows Synjitsu to send gratuitous ARP on behalf of \
+      booting unikernels and to cache incoming SYN packets until they are \
+      ready to receive them."  in
+  Arg.(value & opt (some string) None & info ["synjitsu"] ~docv:"NAME_OR_UUID" ~doc)
+
 let log m =
   Printf.fprintf stdout "%s%!" m
 
@@ -111,8 +121,8 @@ let or_warn msg f =
   try f () with
   | Failure m -> (log (Printf.sprintf "Warning: %s\nReceived exception: %s" msg m)); ()
 
-let jitsu connstr bindaddr bindport forwarder forwardport response_delay
-    map_domain ttl vm_stop_mode =
+let jitsu connstr bindaddr bindport forwarder forwardport response_delay 
+    map_domain ttl vm_stop_mode use_synjitsu =
   let rec maintenance_thread t timeout =
     Lwt_unix.sleep timeout >>= fun () ->
     log ".";
@@ -129,7 +139,7 @@ let jitsu connstr bindaddr bindport forwarder forwardport response_delay
       )
      >>= fun forward_resolver ->
      log (Printf.sprintf "Connecting to %s...\n" connstr);
-     let t = or_abort (fun () -> Jitsu.create log connstr forward_resolver ()) in
+     let t = or_abort (fun () -> Jitsu.create log connstr forward_resolver ~use_synjitsu ()) in
      Lwt.choose [(
          (* main thread, DNS server *)
          let triple (dns,ip,name) =
@@ -149,7 +159,7 @@ let jitsu connstr bindaddr bindport forwarder forwardport response_delay
 
 let jitsu_t =
   Term.(pure jitsu $ connstr $ bindaddr $ bindport $ forwarder $ forwardport
-        $ response_delay $ map_domain $ ttl $ vm_stop_mode )
+        $ response_delay $ map_domain $ ttl $ vm_stop_mode $ synjitsu_domain_uuid )
 
 let () =
   match Term.eval (jitsu_t, info) with
