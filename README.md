@@ -94,7 +94,7 @@ After 2 minutes without DNS requests, Jitsu will suspend the domain automaticall
 
 ```
 -b ADDR, --bind=ADDR (absent=127.0.0.1)
-           Bind local DNS server to interface with this IP
+   Bind local DNS server to interface with this IP
 
 -c CONNECT, --connect=CONNECT (absent=xen:///)
    libvirt connection string (e.g. xen+ssh://x.x.x.x/system or
@@ -125,6 +125,14 @@ After 2 minutes without DNS requests, Jitsu will suspend the domain automaticall
 
 -p PORT, --port=PORT (absent=53)
    UDP port to forward DNS queries to
+
+--synjitsu=NAME_OR_UUID
+   UUID or domain name of a Synjitsu compatible unikernel. When
+   specified, Jitsu will attempt to connect to this domain over Vchan
+   on port 'synjitsu' and send notifications with updates on MAC- and
+   IP-addresses of booted unikernels. This allows Synjitsu to send
+   gratuitous ARP on behalf of booting unikernels and to cache
+   incoming SYN packets until they are ready to receive them.
 
 -t SECONDS, --ttl=SECONDS (absent=60)
    DNS TTL in seconds. The TTL determines how long the clients may
