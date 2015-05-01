@@ -42,7 +42,7 @@ type t = {
   db : Loader.db;                         (* DNS database *)
   log : string -> unit;                   (* Log function *) 
   connection : rw Libvirt.Connect.t;      (* connection to libvirt *)
-  forward_resolver : Dns_resolver_unix.t; (* DNS to forward request to if no
+  forward_resolver : Dns_resolver_unix.t option; (* DNS to forward request to if no
                                              local match *)
   synjitsu : Synjitsu.t option;
   domain_table : (Name.domain_name, vm_metadata) Hashtbl.t;
@@ -73,9 +73,12 @@ let create log connstr forward_resolver ?vm_count:(vm_count=7) ?use_synjitsu:(us
 
 (* fallback to external resolver if local lookup fails *)
 let fallback t _class _type _name =
-  Dns_resolver_unix.resolve t.forward_resolver _class _type _name
-  >>= fun result ->
-  return (Some (Dns.Query.answer_of_response result))
+  match t.forward_resolver with
+  | Some f -> 
+      Dns_resolver_unix.resolve f _class _type _name
+      >>= fun result ->
+      return (Some (Dns.Query.answer_of_response result))
+  | None -> return None
 
 (* convert vm state to string *)
 let string_of_vm_state = function

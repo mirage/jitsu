@@ -30,7 +30,7 @@ type vm_stop_mode = VmStopDestroy | VmStopSuspend | VmStopShutdown
 type t
 (** The type of Jitsu states. *)
 
-val create: (string -> unit) -> string -> Dns_resolver_unix.t -> ?vm_count:int -> ?use_synjitsu:(string option) -> unit -> t
+val create: (string -> unit) -> string -> Dns_resolver_unix.t option -> ?vm_count:int -> ?use_synjitsu:(string option) -> unit -> t
 (** [create log_function name resolver vm_count use_synjitsu] creates a new Jitsu instance, 
     where vm_count is the initial size of the hash table and use_synjitsu is the optional 
     name or uuid of a synjitsu unikernel. *)
