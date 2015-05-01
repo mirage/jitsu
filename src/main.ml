@@ -59,7 +59,8 @@ let connstr =
 let forwarder =
   let doc =
     "IP address of DNS server queries should be forwarded to if no local match \
-     is found. Defaults to system default (/etc/resolv.conf) if not specified."
+     is found. Defaults to system default (/etc/resolv.conf) if not specified. \
+     Set to 0.0.0.0 to disable forwarding."
   in
   Arg.(value & opt string "" & info ["f" ; "forwarder"] ~docv:"ADDR" ~doc)
 
@@ -131,15 +132,18 @@ let jitsu connstr bindaddr bindport forwarder forwardport response_delay
   in
   Lwt_main.run (
     ((match forwarder with
-        | "" -> Dns_resolver_unix.create () (* use resolv.conf *)
+        | "" -> Dns_resolver_unix.create () >>= fun r -> (* use resolv.conf *)
+                Lwt.return (Some r)
+        | "0.0.0.0" -> Lwt.return None
         | _  -> let forwardip = Ipaddr.of_string_exn forwarder in (* use ip from forwarder *)
-          let servers = [(forwardip,forwardport)] in
-          let config = `Static ( servers , [""] ) in
-          Dns_resolver_unix.create ~config:config ()
+                let servers = [(forwardip,forwardport)] in
+                let config = `Static ( servers , [""] ) in
+                Dns_resolver_unix.create ~config:config () >>= fun r ->
+                Lwt.return (Some r)
       )
      >>= fun forward_resolver ->
      log (Printf.sprintf "Connecting to %s...\n" connstr);
-     let t = or_abort (fun () -> Jitsu.create log connstr (Some forward_resolver ) ~use_synjitsu ()) in
+     let t = or_abort (fun () -> Jitsu.create log connstr forward_resolver ~use_synjitsu ()) in
      Lwt.choose [(
          (* main thread, DNS server *)
          let triple (dns,ip,name) =
