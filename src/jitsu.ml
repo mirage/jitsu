@@ -239,9 +239,11 @@ let has_local_domain t domain _type =
 
 (* return base of domain. E.g. www.example.org = example.org, a.b.c.d = c.d *)
 let get_base_domain domain =
-  match domain with
+  (*match domain with
   | _::domain::[tld] | domain::[tld] -> ([domain ; tld] :> Name.domain_name)
-  | _ -> raise (Failure "Invalid domain name")
+  | _ -> raise (Failure "Invalid domain name")*)
+  [List.hd domain]
+  
 
 (* get mac address for domain - TODO only supports one interface *)
 let get_mac domain =
