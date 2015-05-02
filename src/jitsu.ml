@@ -245,7 +245,7 @@ let get_base_domain domain =
   (*match domain with
   | _::domain::[tld] | domain::[tld] -> ([domain ; tld] :> Name.domain_name)
   | _ -> raise (Failure "Invalid domain name")*)
-  [List.hd domain]
+  List.tl domain
   
 
 (* get mac address for domain - TODO only supports one interface *)
