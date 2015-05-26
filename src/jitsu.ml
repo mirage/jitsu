@@ -45,7 +45,7 @@ type t = {
   forward_resolver : Dns_resolver_unix.t option; (* DNS to forward request to if no
                                              local match *)
   synjitsu : Synjitsu.t option;
-  domain_table : (Name.domain_name, vm_metadata) Hashtbl.t;
+  domain_table : (Name.t, vm_metadata) Hashtbl.t;
   (* vm hash table indexed by domain *)
   name_table : (string, vm_metadata) Hashtbl.t;
   (* vm hash table indexed by vm name *)
@@ -195,7 +195,7 @@ let process t ~src:_ ~dst:_ packet =
       match answer.Query.rcode with
       | Packet.NoError ->
         t.log (Printf.sprintf "Local match for domain %s\n"
-                 (Name.domain_name_to_string q.q_name));
+                 (Name.to_string q.q_name));
         (* look for vm in hash table *)
         let vm = get_vm_metadata_by_domain t q.q_name in
         begin match vm with
@@ -215,7 +215,7 @@ let process t ~src:_ ~dst:_ packet =
         end
       | _ ->
         t.log (Printf.sprintf "No local match for %s, forwarding...\n"
-                 (Name.domain_name_to_string q.q_name));
+                 (Name.to_string q.q_name));
         fallback t q.q_class q.q_type q.q_name
     end
   | _ -> return_none
@@ -223,7 +223,7 @@ let process t ~src:_ ~dst:_ packet =
 (* Add domain SOA record. Called automatically from add_vm if domain
    is not registered in local DB as a SOA record *)
 let add_soa t soa_domain ttl =
-  Loader.add_soa_rr [] []
+  Loader.add_soa_rr Name.empty Name.empty
     (Int32.of_int (int_of_float (Unix.time())))
     (Int32.of_int ttl)
     (Int32.of_int 3)
@@ -245,8 +245,7 @@ let get_base_domain domain =
   (*match domain with
   | _::domain::[tld] | domain::[tld] -> ([domain ; tld] :> Name.domain_name)
   | _ -> raise (Failure "Invalid domain name")*)
-  List.tl domain
-  
+  Name.of_string_list (List.tl (Name.to_string_list domain))
 
 (* get mac address for domain - TODO only supports one interface *)
 let get_mac domain =
@@ -272,19 +271,19 @@ let add_vm t ~domain:domain_as_string ~name:vm_name vm_ip stop_mode
   | Some m -> t.log (Printf.sprintf "Domain registered with MAC %s\n" (Macaddr.to_string m))
   | None -> t.log (Printf.sprintf "Warning: MAC not found for domain. Synjitsu will not be notified..\n"));
   (* check if SOA is registered and domain is ok *)
-  let domain_as_list = Name.string_to_domain_name domain_as_string in
-  let base_domain = get_base_domain domain_as_list in
+  let domain_t = Name.of_string domain_as_string in
+  let base_domain = get_base_domain domain_t in
   let answer = has_local_domain t base_domain Packet.Q_SOA in
   if not answer then (
     t.log (Printf.sprintf "Adding SOA '%s' with ttl=%d\n"
-             (Name.domain_name_to_string base_domain) ttl);
+             (Name.to_string base_domain) ttl);
     (* add soa if not registered before *) (* TODO use same ttl? *)
     add_soa t base_domain ttl;
   );
   (* add dns record *)
   t.log (Printf.sprintf "Adding A PTR for '%s' with ttl=%d and ip=%s\n"
-           (Name.domain_name_to_string domain_as_list) ttl (Ipaddr.V4.to_string vm_ip));
-  Loader.add_a_rr vm_ip (Int32.of_int ttl) domain_as_list t.db;
+           (Name.to_string domain_t) ttl (Ipaddr.V4.to_string vm_ip));
+  Loader.add_a_rr vm_ip (Int32.of_int ttl) domain_t t.db;
   let existing_record = (get_vm_metadata_by_name t vm_name) in
   (* reuse existing record if possible *)
   let record = match existing_record with
@@ -302,7 +301,7 @@ let add_vm t ~domain:domain_as_string ~name:vm_name vm_ip stop_mode
     | Some existing_record -> existing_record
   in
   (* add/replace in both hash tables *)
-  Hashtbl.replace t.domain_table domain_as_list record;
+  Hashtbl.replace t.domain_table domain_t record;
   Hashtbl.replace t.name_table vm_name record;
   return_unit
 
