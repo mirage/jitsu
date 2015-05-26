@@ -5,7 +5,7 @@ build: [
   [make]
 ]
 depends: [  "lwt" 
-            "dns"  >= "0.15.0"
+            "dns"  { >= "0.15.0" }
             "cmdliner" 
             "libvirt" 
             "ipaddr"
