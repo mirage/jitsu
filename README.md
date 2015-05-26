@@ -17,7 +17,7 @@ CPPFLAGS="-Wno-error=tautological-compare -Wno-error=unused-function"  opam inst
 Jitsu can now be installed with opam:
 
 ```
-opam pin add jitsu 'https://github.com/MagnusS/jitsu.git'
+opam pin add jitsu 'https://github.com/mirage/jitsu.git'
 opam install jitsu
 ```
 
