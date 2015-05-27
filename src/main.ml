@@ -17,8 +17,6 @@
 open Lwt
 open Cmdliner
 
-module Jitsu = Jitsu.Make (Libvirt_backend)
-
 let info =
   let doc =
     "Just-In-Time Summoning of Unikernels. Jitsu is a forwarding DNS server \
@@ -128,8 +126,22 @@ let or_warn_lwt msg f =
   try f () with
   | Failure m -> (log (Printf.sprintf "Warning: %s\nReceived exception: %s" msg m)); Lwt.return_unit
 
-let jitsu connstr bindaddr bindport forwarder forwardport response_delay 
+let backend =
+  let doc =
+    "Which backend to use. Currently only libvirt is supported." in
+  Arg.(value & opt (enum [("libvirt" , `Libvirt);
+                          ("libxl", `Libxl)])
+         `Libvirt & info ["x" ; "backend" ] ~docv:"BACKEND" ~doc)
+
+
+let jitsu backend connstr bindaddr bindport forwarder forwardport response_delay 
     map_domain ttl vm_stop_mode use_synjitsu =
+  let (module B) = 
+      if backend = `Libvirt then 
+          (module Libvirt_backend : Backends.VM_BACKEND with type t = Libvirt_backend.t) 
+      else (module Libvirt_backend) 
+  in
+  let module Jitsu = Jitsu.Make(B) in
   let rec maintenance_thread t timeout =
     Lwt_unix.sleep timeout >>= fun () ->
     log ".";
@@ -149,11 +161,14 @@ let jitsu connstr bindaddr bindport forwarder forwardport response_delay
       )
      >>= fun forward_resolver ->
      log (Printf.sprintf "Connecting to %s...\n" connstr);
-     Libvirt_backend.connect connstr >>= fun r ->
+     begin
+     match backend with
+     | `Libvirt | _ -> Libvirt_backend.connect connstr
+     end >>= fun r ->
      match r with
      | `Error _ -> raise (Failure "Unable to connect to backend") 
-     | `Ok backend ->
-       let t = or_abort (fun () -> Jitsu.create backend log forward_resolver ~use_synjitsu ()) in
+     | `Ok backend_t ->
+       let t = or_abort (fun () -> Jitsu.create backend_t log forward_resolver ~use_synjitsu ()) in
        Lwt.choose [(
            (* main thread, DNS server *)
            let triple (dns,ip,name) =
@@ -172,7 +187,7 @@ let jitsu connstr bindaddr bindport forwarder forwardport response_delay
   )
 
 let jitsu_t =
-  Term.(pure jitsu $ connstr $ bindaddr $ bindport $ forwarder $ forwardport
+  Term.(pure jitsu $ backend $ connstr $ bindaddr $ bindport $ forwarder $ forwardport
         $ response_delay $ map_domain $ ttl $ vm_stop_mode $ synjitsu_domain_uuid )
 
 let () =
