@@ -63,38 +63,38 @@ module Make (Backend : Backends.VM_BACKEND) = struct
         begin
           t.is_connecting := true;
           (try_lwt (disconnect t) with _ -> Lwt.return_unit) >>= fun () -> (* disconnect just in case, ignore result *)
-Lwt_unix.sleep 1.0 >>= fun () -> (* wait, just in case *)
-t.log "synjitsu: Connecting...\n";
-or_error "synjitsu: Could not find synjitsu VM by uuid" (Backend.lookup_vm_by_uuid t.backend) t.vm_uuid >>= fun vm_domain ->
-or_error "synjitsu: Unable to find synjitsu VM dom id for vchan connection" (Backend.get_domain_id t.backend) vm_domain >>= fun domid ->
-let client = `Vchan_direct (`Domid domid, `Port t.vchan_port) in
-Conduit_lwt_unix.init () >>= fun ctx ->
-Conduit_lwt_unix.connect ~ctx client >>= fun (_, ic, oc) ->
-t.log "synjitsu: Connected\n";
-t.ic := Some ic;
-t.oc := Some oc;
-t.is_connecting := false; 
-Lwt.return_unit
-end else
-  Lwt.return_unit
-with 
-exn -> t.log (Printf.sprintf "synjitsu: Unable to connect: %s\n" (Printexc.to_string exn)); 
-t.is_connecting := false; 
-Lwt.return_unit
+          Lwt_unix.sleep 1.0 >>= fun () -> (* wait, just in case *)
+          t.log "synjitsu: Connecting...\n";
+          or_error "synjitsu: Could not find synjitsu VM by uuid" (Backend.lookup_vm_by_uuid t.backend) t.vm_uuid >>= fun vm_domain ->
+          or_error "synjitsu: Unable to find synjitsu VM dom id for vchan connection" (Backend.get_domain_id t.backend) vm_domain >>= fun domid ->
+          let client = `Vchan_direct (`Domid domid, `Port t.vchan_port) in
+          Conduit_lwt_unix.init () >>= fun ctx ->
+          Conduit_lwt_unix.connect ~ctx client >>= fun (_, ic, oc) ->
+          t.log "synjitsu: Connected\n";
+          t.ic := Some ic;
+          t.oc := Some oc;
+          t.is_connecting := false; 
+          Lwt.return_unit
+        end else
+        Lwt.return_unit
+    with 
+      exn -> t.log (Printf.sprintf "synjitsu: Unable to connect: %s\n" (Printexc.to_string exn)); 
+      t.is_connecting := false; 
+      Lwt.return_unit
 
-let send t buf =
-  match !(t.oc) with
-  | None -> t.log "synjitsu: Unable to send - message dropped. Trying to connect...\n"; ignore_result (connect t); Lwt.return_unit
-  | Some oc -> try_lwt 
-                 Lwt_io.write_from_string_exactly oc (Cstruct.to_string buf) 0 (Cstruct.len buf)
-with 
-End_of_file -> t.log "synjitsu: disconnected.\n" ; ignore_result (connect t); Lwt.return_unit
+  let send t buf =
+    match !(t.oc) with
+    | None -> t.log "synjitsu: Unable to send - message dropped. Trying to connect...\n"; ignore_result (connect t); Lwt.return_unit
+    | Some oc -> try_lwt 
+        Lwt_io.write_from_string_exactly oc (Cstruct.to_string buf) 0 (Cstruct.len buf)
+      with 
+        End_of_file -> t.log "synjitsu: disconnected.\n" ; ignore_result (connect t); Lwt.return_unit
 
-let send_garp t mac ip =
-  (* TODO support ipv6 *)
-  let mac_buf = Macaddr.to_bytes mac in
-  let ip_buf = Ipaddr.V4.to_bytes ip in
-  let buf = Cstruct.of_string (mac_buf ^ ip_buf) in
-  send t buf
+  let send_garp t mac ip =
+    (* TODO support ipv6 *)
+    let mac_buf = Macaddr.to_bytes mac in
+    let ip_buf = Ipaddr.V4.to_bytes ip in
+    let buf = Cstruct.of_string (mac_buf ^ ip_buf) in
+    send t buf
 
 end
