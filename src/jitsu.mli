@@ -25,8 +25,8 @@
     automatically stopped. *)
 
 module Make :
-functor (Backend : Backends.VM_BACKEND) ->
-sig
+  functor (Backend : Backends.VM_BACKEND) ->
+  sig
     type t
     (** The type of Jitsu states. *)
 
@@ -46,5 +46,5 @@ sig
 
     val stop_expired_vms: t -> unit Lwt.t
     (** Iterate through the internal VM table and stop VMs that haven't
-    received requests for more than [ttl*2] seconds. *)
-end
+        received requests for more than [ttl*2] seconds. *)
+  end

@@ -105,12 +105,12 @@ let vm_stop_mode =
 
 let synjitsu_domain_uuid =
   let doc =
-     "UUID or domain name of a Synjitsu compatible unikernel. When specified, \
-      Jitsu will attempt to connect to this domain over Vchan on port 'synjitsu' \
-      and send notifications with updates on MAC- and IP-addresses of booted \
-      unikernels. This allows Synjitsu to send gratuitous ARP on behalf of \
-      booting unikernels and to cache incoming SYN packets until they are \
-      ready to receive them."  in
+    "UUID or domain name of a Synjitsu compatible unikernel. When specified, \
+     Jitsu will attempt to connect to this domain over Vchan on port 'synjitsu' \
+     and send notifications with updates on MAC- and IP-addresses of booted \
+     unikernels. This allows Synjitsu to send gratuitous ARP on behalf of \
+     booting unikernels and to cache incoming SYN packets until they are \
+     ready to receive them."  in
   Arg.(value & opt (some string) None & info ["synjitsu"] ~docv:"NAME_OR_UUID" ~doc)
 
 let log m =
@@ -139,13 +139,13 @@ let jitsu connstr bindaddr bindport forwarder forwardport response_delay
   Lwt_main.run (
     ((match forwarder with
         | "" -> Dns_resolver_unix.create () >>= fun r -> (* use resolv.conf *)
-                Lwt.return (Some r)
+          Lwt.return (Some r)
         | "0.0.0.0" -> Lwt.return None
         | _  -> let forwardip = Ipaddr.of_string_exn forwarder in (* use ip from forwarder *)
-                let servers = [(forwardip,forwardport)] in
-                let config = `Static ( servers , [""] ) in
-                Dns_resolver_unix.create ~config:config () >>= fun r ->
-                Lwt.return (Some r)
+          let servers = [(forwardip,forwardport)] in
+          let config = `Static ( servers , [""] ) in
+          Dns_resolver_unix.create ~config:config () >>= fun r ->
+          Lwt.return (Some r)
       )
      >>= fun forward_resolver ->
      log (Printf.sprintf "Connecting to %s...\n" connstr);
@@ -153,22 +153,22 @@ let jitsu connstr bindaddr bindport forwarder forwardport response_delay
      match r with
      | `Error _ -> raise (Failure "Unable to connect to backend") 
      | `Ok backend ->
-     let t = or_abort (fun () -> Jitsu.create backend log forward_resolver ~use_synjitsu ()) in
-     Lwt.choose [(
-         (* main thread, DNS server *)
-         let triple (dns,ip,name) =
-           log (Printf.sprintf "Adding domain '%s' for VM '%s' with ip %s\n" dns name ip);
-           or_abort (fun () -> Jitsu.add_vm t ~domain:dns ~name (Ipaddr.V4.of_string_exn ip) vm_stop_mode ~delay:response_delay ~ttl)
-         in
-         Lwt_list.iter_p triple map_domain
-         >>= fun () ->
-         log (Printf.sprintf "Starting server on %s:%d...\n" bindaddr bindport);
-         let processor = ((Dns_server.processor_of_process (Jitsu.process t))
-                          :> (module Dns_server.PROCESSOR)) in
-         Dns_server_unix.serve_with_processor ~address:bindaddr ~port:bindport
-           ~processor);
-        (* maintenance thread, delay in seconds *)
-        (maintenance_thread t 5.0)]);
+       let t = or_abort (fun () -> Jitsu.create backend log forward_resolver ~use_synjitsu ()) in
+       Lwt.choose [(
+           (* main thread, DNS server *)
+           let triple (dns,ip,name) =
+             log (Printf.sprintf "Adding domain '%s' for VM '%s' with ip %s\n" dns name ip);
+             or_abort (fun () -> Jitsu.add_vm t ~domain:dns ~name (Ipaddr.V4.of_string_exn ip) vm_stop_mode ~delay:response_delay ~ttl)
+           in
+           Lwt_list.iter_p triple map_domain
+           >>= fun () ->
+           log (Printf.sprintf "Starting server on %s:%d...\n" bindaddr bindport);
+           let processor = ((Dns_server.processor_of_process (Jitsu.process t))
+                            :> (module Dns_server.PROCESSOR)) in
+           Dns_server_unix.serve_with_processor ~address:bindaddr ~port:bindport
+             ~processor);
+          (* maintenance thread, delay in seconds *)
+          (maintenance_thread t 5.0)]);
   )
 
 let jitsu_t =
