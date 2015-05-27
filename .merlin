@@ -8,4 +8,7 @@ PKG cstruct
 PKG conduit
 PKG vchan
 
-S lwt
+EXT lwt
+
+S src
+B bin

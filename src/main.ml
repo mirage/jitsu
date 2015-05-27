@@ -17,6 +17,8 @@
 open Lwt
 open Cmdliner
 
+module Jitsu = Jitsu.Make (Libvirt_backend)
+
 let info =
   let doc =
     "Just-In-Time Summoning of Unikernels. Jitsu is a forwarding DNS server \
@@ -96,10 +98,10 @@ let vm_stop_mode =
      $(b,destroy) and $(b,shutdown). Suspended VMs are generally faster to \
      resume, but require resources to store state. Note that Mirage \
      suspend/resume is currently not supported on ARM." in
-  Arg.(value & opt (enum [("destroy" , Jitsu.VmStopDestroy);
-                          ("suspend" , Jitsu.VmStopSuspend);
-                          ("shutdown", Jitsu.VmStopShutdown)])
-         Jitsu.VmStopSuspend & info ["m" ; "mode" ] ~docv:"MODE" ~doc)
+  Arg.(value & opt (enum [("destroy" , Backends.VmStopDestroy);
+                          ("suspend" , Backends.VmStopSuspend);
+                          ("shutdown", Backends.VmStopShutdown)])
+         Backends.VmStopSuspend & info ["m" ; "mode" ] ~docv:"MODE" ~doc)
 
 let synjitsu_domain_uuid =
   let doc =
@@ -122,12 +124,16 @@ let or_warn msg f =
   try f () with
   | Failure m -> (log (Printf.sprintf "Warning: %s\nReceived exception: %s" msg m)); ()
 
+let or_warn_lwt msg f =
+  try f () with
+  | Failure m -> (log (Printf.sprintf "Warning: %s\nReceived exception: %s" msg m)); Lwt.return_unit
+
 let jitsu connstr bindaddr bindport forwarder forwardport response_delay 
     map_domain ttl vm_stop_mode use_synjitsu =
   let rec maintenance_thread t timeout =
     Lwt_unix.sleep timeout >>= fun () ->
     log ".";
-    or_warn "Unable to stop expired VMs" (fun () -> Jitsu.stop_expired_vms t);
+    or_warn_lwt "Unable to stop expired VMs" (fun () -> Jitsu.stop_expired_vms t) >>= fun () ->
     maintenance_thread t timeout;
   in
   Lwt_main.run (
@@ -143,7 +149,11 @@ let jitsu connstr bindaddr bindport forwarder forwardport response_delay
       )
      >>= fun forward_resolver ->
      log (Printf.sprintf "Connecting to %s...\n" connstr);
-     let t = or_abort (fun () -> Jitsu.create log connstr forward_resolver ~use_synjitsu ()) in
+     Libvirt_backend.connect connstr >>= fun r ->
+     match r with
+     | `Error _ -> raise (Failure "Unable to connect to backend") 
+     | `Ok backend ->
+     let t = or_abort (fun () -> Jitsu.create backend log forward_resolver ~use_synjitsu ()) in
      Lwt.choose [(
          (* main thread, DNS server *)
          let triple (dns,ip,name) =

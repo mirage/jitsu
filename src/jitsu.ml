@@ -16,131 +16,128 @@
 
 open Lwt
 open Dns
-open Libvirt
 
-type vm_stop_mode = VmStopDestroy | VmStopSuspend | VmStopShutdown
+module Make (Backend : Backends.VM_BACKEND) = struct
+    module Synjitsu = Synjitsu.Make(Backend)
+    
+    type vm_metadata = {
+      vm : Backend.vm;              (* Backend VM representation *)
+      ip : Ipaddr.V4.t;             (* IP addr of this domain *)
 
-type vm_metadata = {
-  vm_name : string;             (* Unique name of VM. Matches name in libvirt *)
-  vm_uuid : Libvirt.uuid;       (* Libvirt data structure for this VM *)
+      query_response_delay : float; (* in seconds, delay after startup before
+                                       sending query response *)
+      vm_ttl : int;                 (* TTL in seconds. VM is stopped [vm_ttl]
+                                       seconds after [requested_ts] *)
+      how_to_stop : Backends.vm_stop_mode;   (* how to stop the VM on timeout *)
+      mutable started_ts : int;     (* started timestamp *)
+      mutable requested_ts : int;   (* last request timestamp *)
+      mutable total_requests : int;
+      mutable total_starts : int;
+    }
 
-  mac : Macaddr.t option;       (* MAC addr of this domain, if known. Used for gARP *)
-  ip : Ipaddr.V4.t;                (* IP addr of this domain *)
+    type t = {
+      db : Loader.db;                         (* DNS database *)
+      log : string -> unit;                   (* Log function *) 
+      backend : Backend.t;                          (* Backend type *)
+      forward_resolver : Dns_resolver_unix.t option; (* DNS to forward request to if no
+                                                 local match *)
+      synjitsu : Synjitsu.t option;
+      domain_table : (Name.t, vm_metadata) Hashtbl.t;
+      (* vm hash table indexed by domain *)
+      name_table : (string, vm_metadata) Hashtbl.t;
+      (* vm hash table indexed by vm name *)
+    }
 
-  query_response_delay : float; (* in seconds, delay after startup before
-                                   sending query response *)
-  vm_ttl : int;                 (* TTL in seconds. VM is stopped [vm_ttl]
-                                   seconds after [requested_ts] *)
-  how_to_stop : vm_stop_mode;   (* how to stop the VM on timeout *)
-  mutable started_ts : int;     (* started timestamp *)
-  mutable requested_ts : int;   (* last request timestamp *)
-  mutable total_requests : int;
-  mutable total_starts : int;
-}
+    let create backend log forward_resolver ?vm_count:(vm_count=7) ?use_synjitsu:(use_synjitsu=None) () =
+      let synjitsu = match use_synjitsu with
+      | Some domain -> let t = (Synjitsu.create backend log domain "synjitsu") in
+                ignore_result (Synjitsu.connect t);  (* connect in background *)
+                Some t
+      | None -> None
+      in
+      { db = Loader.new_db ();
+        log = log; 
+        backend;
+        forward_resolver = forward_resolver;
+        synjitsu;
+        domain_table = Hashtbl.create ~random:true vm_count;
+        name_table = Hashtbl.create ~random:true vm_count }
 
-type t = {
-  db : Loader.db;                         (* DNS database *)
-  log : string -> unit;                   (* Log function *) 
-  connection : rw Libvirt.Connect.t;      (* connection to libvirt *)
-  forward_resolver : Dns_resolver_unix.t option; (* DNS to forward request to if no
-                                             local match *)
-  synjitsu : Synjitsu.t option;
-  domain_table : (Name.t, vm_metadata) Hashtbl.t;
-  (* vm hash table indexed by domain *)
-  name_table : (string, vm_metadata) Hashtbl.t;
-  (* vm hash table indexed by vm name *)
-}
+    (* fallback to external resolver if local lookup fails *)
+    let fallback t _class _type _name =
+      match t.forward_resolver with
+      | Some f -> 
+          Dns_resolver_unix.resolve f _class _type _name
+          >>= fun result ->
+          return (Some (Dns.Query.answer_of_response result))
+      | None -> return None
 
-let try_libvirt msg f =
-  try f () with
-  | Libvirt.Virterror e -> raise (Failure (Printf.sprintf "%s: %s" msg (Libvirt.Virterror.to_string e)))
+    (* convert vm state to string *)
+    let string_of_vm_state = function
+      | Backends.VmInfoNoState -> "no state"
+      | Backends.VmInfoRunning -> "running"
+      | Backends.VmInfoBlocked -> "blocked"
+      | Backends.VmInfoPaused -> "paused"
+      | Backends.VmInfoShutdown -> "shutdown"
+      | Backends.VmInfoShutoff -> "shutoff"
+      | Backends.VmInfoCrashed -> "crashed"
 
-let create log connstr forward_resolver ?vm_count:(vm_count=7) ?use_synjitsu:(use_synjitsu=None) () =
-  let connection = try_libvirt "Unable to connect" (fun () -> Libvirt.Connect.connect ~name:connstr ()) in
-  let synjitsu = match use_synjitsu with
-  | Some domain -> let t = (Synjitsu.create connection log domain "synjitsu") in
-            ignore_result (Synjitsu.connect t);  (* connect in background *)
-            Some t
-  | None -> None
-  in
-  { db = Loader.new_db ();
-    log = log; 
-    connection;
-    forward_resolver = forward_resolver;
-    synjitsu;
-    domain_table = Hashtbl.create ~random:true vm_count;
-    name_table = Hashtbl.create ~random:true vm_count }
+    let or_backend_error msg fn t =
+        fn t >>= function
+        | `Error e -> begin
+            match e with 
+            | `Not_found -> raise (Failure (Printf.sprintf "%s: Not found" msg))
+            | `Disconnected -> raise (Failure (Printf.sprintf "%s: Disconnected" msg))
+            | `Unknown s -> raise (Failure (Printf.sprintf "%s: %s" msg s))
+        end
+        | `Ok t -> return t
 
-(* fallback to external resolver if local lookup fails *)
-let fallback t _class _type _name =
-  match t.forward_resolver with
-  | Some f -> 
-      Dns_resolver_unix.resolve f _class _type _name
-      >>= fun result ->
-      return (Some (Dns.Query.answer_of_response result))
-  | None -> return None
 
-(* convert vm state to string *)
-let string_of_vm_state = function
-  | Libvirt.Domain.InfoNoState -> "no state"
-  | Libvirt.Domain.InfoRunning -> "running"
-  | Libvirt.Domain.InfoBlocked -> "blocked"
-  | Libvirt.Domain.InfoPaused -> "paused"
-  | Libvirt.Domain.InfoShutdown -> "shutdown"
-  | Libvirt.Domain.InfoShutoff -> "shutoff"
-  | Libvirt.Domain.InfoCrashed -> "crashed"
-
-let lookup_uuid t vm_uuid =
-  try_libvirt (Printf.sprintf "Unable to find VM by UUID %s" vm_uuid) (fun () -> Libvirt.Domain.lookup_by_uuid t.connection vm_uuid)
-
-let get_vm_info t vm =
-  try_libvirt "Unable to get VM info" (fun () -> Libvirt.Domain.get_info (lookup_uuid t vm.vm_uuid))
+let get_vm_name t vm =
+    or_backend_error "Unable to get VM name from backend" (Backend.get_name t.backend) vm.vm
 
 let get_vm_state t vm =
-  let info = get_vm_info t vm in
-  try_libvirt "Unable to get VM state" (fun () -> info.Libvirt.Domain.state)
-
-let destroy_vm t vm =
-  try_libvirt "Unable to destroy VM" (fun () -> Libvirt.Domain.destroy (lookup_uuid t vm.vm_uuid))
-
-let shutdown_vm t vm =
-  try_libvirt "Unable to shutdown VM" (fun () -> Libvirt.Domain.shutdown (lookup_uuid t vm.vm_uuid))
-
-let suspend_vm t vm =
-  try_libvirt "Unable to suspend VM" (fun () -> Libvirt.Domain.suspend (lookup_uuid t vm.vm_uuid))
-
-let resume_vm t vm =
-  try_libvirt "Unable to resume VM" (fun () -> Libvirt.Domain.resume (lookup_uuid t vm.vm_uuid))
-
-let create_vm t vm =
-  try_libvirt "Unable to create VM" (fun () -> Libvirt.Domain.create (lookup_uuid t vm.vm_uuid))
+    or_backend_error "Unable to get VM state from backend" (Backend.get_state t.backend) vm.vm
 
 let stop_vm t vm =
-  match get_vm_state t vm with
-  | Libvirt.Domain.InfoRunning ->
+  get_vm_name t vm >>= fun vm_name ->
+  get_vm_state t vm >>= fun vm_state ->
+  match vm_state with
+  | Backends.VmInfoRunning ->
     begin match vm.how_to_stop with
-      | VmStopShutdown -> t.log (Printf.sprintf "VM shutdown: %s\n" vm.vm_name); shutdown_vm t vm
-      | VmStopSuspend  -> t.log (Printf.sprintf "VM suspend: %s\n" vm.vm_name) ; suspend_vm t vm
-      | VmStopDestroy  -> t.log (Printf.sprintf "VM destroy: %s\n" vm.vm_name) ; destroy_vm t vm
+      | Backends.VmStopShutdown -> t.log (Printf.sprintf "VM shutdown: %s\n" vm_name);
+                                   or_backend_error "Unable to shutdown VM" (Backend.shutdown_vm t.backend) vm.vm
+      | Backends.VmStopSuspend  -> t.log (Printf.sprintf "VM suspend: %s\n" vm_name);
+                                   or_backend_error "Unable to suspend VM" (Backend.suspend_vm t.backend) vm.vm
+      | Backends.VmStopDestroy  -> t.log (Printf.sprintf "VM destroy: %s\n" vm_name) ; 
+                                   or_backend_error "Unable to destroy VM" (Backend.destroy_vm t.backend) vm.vm
     end
-  | _ -> ()
+  | _ -> Lwt.return_unit (* VM already stopped *)
 
 let start_vm t vm =
-  let state = get_vm_state t vm in
-  t.log (Printf.sprintf "Starting %s (%s)" vm.vm_name (string_of_vm_state state));
-  match state with
-  | Libvirt.Domain.InfoPaused | Libvirt.Domain.InfoShutdown
-  | Libvirt.Domain.InfoShutoff ->
-    let () = match state with
-      | Libvirt.Domain.InfoPaused ->
-        t.log " --> resuming vm...\n";
-        resume_vm t vm
-      | _ ->
-        t.log " --> creating vm...\n";
-        create_vm t vm
-    in
+  get_vm_name t vm >>= fun vm_name ->
+  get_vm_state t vm >>= fun vm_state ->
+  t.log (Printf.sprintf "Starting %s (%s)" vm_name (string_of_vm_state vm_state));
+  match vm_state with
+  | Backends.VmInfoRunning -> (* Already running, exit *)
+    t.log " --! VM is already running\n";
+    Lwt.return_unit
+  | Backends.VmInfoPaused 
+  | Backends.VmInfoShutdown 
+  | Backends.VmInfoShutoff ->
+    (* Try to start VM *)
+    begin
+        match vm_state with
+          | Backends.VmInfoPaused ->
+            t.log " --> resuming vm...\n";
+            or_backend_error "Unable to resume VM" (Backend.resume_vm t.backend) vm.vm 
+          | _ ->
+            t.log " --> creating vm...\n";
+            or_backend_error "Unable to create VM" (Backend.start_vm t.backend) vm.vm
+    end >>= fun () ->
     (* Notify Synjitsu *)
-    (match vm.mac with
+    or_backend_error "Unable to get MAC for VM" (Backend.get_mac t.backend) vm.vm >>= fun vm_mac ->
+    (match vm_mac with
       | Some m -> 
               (match t.synjitsu with
               | Some s -> (
@@ -158,11 +155,9 @@ let start_vm t vm =
     vm.total_starts <- vm.total_starts + 1;
     (* sleeping a bit *)
     Lwt_unix.sleep vm.query_response_delay
-  | Libvirt.Domain.InfoRunning ->
-    t.log " --! VM is already running\n";
-    Lwt.return_unit
-  | Libvirt.Domain.InfoBlocked | Libvirt.Domain.InfoCrashed
-  | Libvirt.Domain.InfoNoState ->
+  | Backends.VmInfoBlocked 
+  | Backends.VmInfoCrashed
+  | Backends.VmInfoNoState ->
     t.log " --! VM cannot be started from this state.\n";
     Lwt.return_unit
 
@@ -174,15 +169,21 @@ let get_vm_metadata_by_name t name =
   try Some (Hashtbl.find t.name_table name)
   with Not_found -> None
 
-let get_stats vm =
-  Printf.sprintf "VM: %s\n\
+let get_stats t vm =
+    get_vm_name t vm >>= fun vm_name ->
+    get_vm_state t vm >>= fun vm_state ->
+    let result_str = 
+        Printf.sprintf "VM: %s\n\
+                 \ state: %s\n\
                  \ total requests: %d\n\
                  \ total starts: %d\n\
                  \ last start: %d\n\
                  \ last request: %d (%d seconds since started)\n\
                  \ vm ttl: %d\n"
-    vm.vm_name vm.total_requests vm.total_starts vm.started_ts vm.requested_ts
-    (vm.requested_ts - vm.started_ts) vm.vm_ttl
+        vm_name (string_of_vm_state vm_state) vm.total_requests vm.total_starts vm.started_ts vm.requested_ts
+        (vm.requested_ts - vm.started_ts) vm.vm_ttl
+    in
+    Lwt.return result_str
 
 (* Process function for ocaml-dns. Starts new VMs from DNS queries or
    forwards request to a fallback resolver *)
@@ -200,13 +201,15 @@ let process t ~src:_ ~dst:_ packet =
         let vm = get_vm_metadata_by_domain t q.q_name in
         begin match vm with
           | Some vm -> begin (* there is a match *)
-              t.log (Printf.sprintf "Matching VM is %s\n" vm.vm_name);
+              get_vm_name t vm >>= fun vm_name ->
+              t.log (Printf.sprintf "Matching VM is %s\n" vm_name);
               (* update stats *)
               vm.total_requests <- vm.total_requests + 1;
               vm.requested_ts <- int_of_float (Unix.time());
               start_vm t vm >>= fun () ->
               (* print stats *)
-              t.log (get_stats vm);
+              get_stats t vm >>= fun vm_stats_str ->
+              t.log vm_stats_str;
               return (Some answer);
             end;
           | None -> (* no match, fall back to resolver *)
@@ -242,32 +245,17 @@ let has_local_domain t domain _type =
 
 (* return base of domain. E.g. www.example.org = example.org, a.b.c.d = c.d *)
 let get_base_domain domain =
-  (*match domain with
-  | _::domain::[tld] | domain::[tld] -> ([domain ; tld] :> Name.domain_name)
-  | _ -> raise (Failure "Invalid domain name")*)
   Name.of_string_list (List.tl (Name.to_string_list domain))
-
-(* get mac address for domain - TODO only supports one interface *)
-let get_mac domain =
-  let dom_xml_s = try_libvirt "Unable to retrieve XML description of domain" (fun () -> Libvirt.Domain.get_xml_desc domain) in
-  (*Printf.printf "xml is %s" dom_xml_s;*)
-  try
-      let (_, dom_xml) = Ezxmlm.from_string dom_xml_s in
-      let (mac_attr, _) = Ezxmlm.member "domain" dom_xml |> Ezxmlm.member "devices" |> Ezxmlm.member "interface" |> Ezxmlm.member_with_attr "mac" in
-      let mac_s = Ezxmlm.get_attr "address" mac_attr in
-      Macaddr.of_string mac_s
-  with
-  | Not_found -> None
-  | Ezxmlm.Tag_not_found _ -> None
 
 (* add vm to be monitored by jitsu *)
 let add_vm t ~domain:domain_as_string ~name:vm_name vm_ip stop_mode
     ~delay:response_delay ~ttl =
   (* check if vm_name exists and set up VM record *)
-  let vm_dom = try_libvirt "Unable to lookup VM by name" (fun () -> Libvirt.Domain.lookup_by_name t.connection vm_name) in
-  let vm_uuid = try_libvirt (Printf.sprintf "Unable to get uuid for %s" vm_name) (fun () -> Libvirt.Domain.get_uuid vm_dom) in
-  let mac = get_mac vm_dom in
-  (match mac with
+  
+  or_backend_error "Unable to lookup VM by name" (Backend.lookup_vm_by_name t.backend) vm_name >>= fun vm_dom ->
+  or_backend_error "Unable to get MAC for VM" (Backend.get_mac t.backend) vm_dom >>= fun vm_mac ->
+
+  (match vm_mac with
   | Some m -> t.log (Printf.sprintf "Domain registered with MAC %s\n" (Macaddr.to_string m))
   | None -> t.log (Printf.sprintf "Warning: MAC not found for domain. Synjitsu will not be notified..\n"));
   (* check if SOA is registered and domain is ok *)
@@ -287,9 +275,7 @@ let add_vm t ~domain:domain_as_string ~name:vm_name vm_ip stop_mode
   let existing_record = (get_vm_metadata_by_name t vm_name) in
   (* reuse existing record if possible *)
   let record = match existing_record with
-    | None -> { vm_name;
-                vm_uuid;
-                mac;
+    | None -> { vm=vm_dom;
                 ip=vm_ip;
                 how_to_stop = stop_mode;
                 vm_ttl = ttl * 2; (* note *2 here *)
@@ -323,7 +309,9 @@ let stop_expired_vms t =
   in
   Hashtbl.iter put_in_array t.name_table;
   let stop_vm = function
-    | None    -> ()
+    | None    -> Lwt.return_unit
     | Some vm -> stop_vm t vm
   in
-  Array.iter stop_vm expired_vms 
+  Lwt_stream.iter_s stop_vm (Lwt_stream.of_array expired_vms) 
+
+end
