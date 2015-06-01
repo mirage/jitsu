@@ -96,10 +96,10 @@ let vm_stop_mode =
      $(b,destroy) and $(b,shutdown). Suspended VMs are generally faster to \
      resume, but require resources to store state. Note that Mirage \
      suspend/resume is currently not supported on ARM." in
-  Arg.(value & opt (enum [("destroy" , Backends.VmStopDestroy);
-                          ("suspend" , Backends.VmStopSuspend);
-                          ("shutdown", Backends.VmStopShutdown)])
-         Backends.VmStopSuspend & info ["m" ; "mode" ] ~docv:"MODE" ~doc)
+  Arg.(value & opt (enum [("destroy" , Vm_stop_mode.Destroy);
+                          ("suspend" , Vm_stop_mode.Suspend);
+                          ("shutdown", Vm_stop_mode.Shutdown)])
+         Vm_stop_mode.Shutdown & info ["m" ; "mode" ] ~docv:"MODE" ~doc)
 
 let synjitsu_domain_uuid =
   let doc =
@@ -168,7 +168,7 @@ let jitsu backend connstr bindaddr bindport forwarder forwardport response_delay
      match r with
      | `Error _ -> raise (Failure "Unable to connect to backend") 
      | `Ok backend_t ->
-       let t = or_abort (fun () -> Jitsu.create backend_t log forward_resolver ~use_synjitsu ()) in
+       or_abort (fun () -> Jitsu.create backend_t log forward_resolver ~use_synjitsu ()) >>= fun t ->
        Lwt.choose [(
            (* main thread, DNS server *)
            let triple (dns,ip,name) =

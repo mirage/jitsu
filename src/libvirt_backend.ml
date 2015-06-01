@@ -36,13 +36,13 @@ let connect connstr =
 
 (* convert vm state to string *)
 let libvirt_state_to_vm_state = function
-  | Libvirt.Domain.InfoNoState -> Backends.VmInfoNoState
-  | Libvirt.Domain.InfoRunning -> Backends.VmInfoRunning
-  | Libvirt.Domain.InfoBlocked -> Backends.VmInfoBlocked
-  | Libvirt.Domain.InfoPaused -> Backends.VmInfoPaused
-  | Libvirt.Domain.InfoShutdown -> Backends.VmInfoShutdown
-  | Libvirt.Domain.InfoShutoff -> Backends.VmInfoShutoff
-  | Libvirt.Domain.InfoCrashed -> Backends.VmInfoCrashed
+  | Libvirt.Domain.InfoNoState 
+  | Libvirt.Domain.InfoBlocked 
+  | Libvirt.Domain.InfoCrashed -> Vm_state.Unknown
+  | Libvirt.Domain.InfoRunning -> Vm_state.Running
+  | Libvirt.Domain.InfoPaused -> Vm_state.Paused
+  | Libvirt.Domain.InfoShutdown 
+  | Libvirt.Domain.InfoShutoff -> Vm_state.Off
 
 let lookup_vm_by_uuid t vm_uuid =
   (* We use UUID for internal representation, but call lookup anyway to make sure it exists *)

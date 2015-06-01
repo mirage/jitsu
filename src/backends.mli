@@ -14,8 +14,6 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  *)
 
-type vm_stop_mode = VmStopDestroy | VmStopSuspend | VmStopShutdown
-type vm_state = VmInfoRunning | VmInfoPaused | VmInfoShutoff | VmInfoShutdown | VmInfoBlocked | VmInfoCrashed | VmInfoNoState
 type uuid = string
 type error = [ `Not_found | `Disconnected | `Unknown of string ]
 
@@ -29,7 +27,7 @@ sig
   val lookup_vm_by_name : t -> string -> [ `Ok of vm | `Error of error ] Lwt.t
   (** Lookup UUID of a VM by name *)
 
-  val get_state : t -> vm -> [ `Ok of vm_state | `Error of error ] Lwt.t
+  val get_state : t -> vm -> [ `Ok of Vm_state.t | `Error of error ] Lwt.t
   (** Get VM state from [vm] type *)
   val get_name : t -> vm -> [ `Ok of string | `Error of error ] Lwt.t
   (** Get VM name from [vm] type *)
@@ -53,3 +51,29 @@ sig
   (** Start VM *)
 
 end
+
+(*module type STORAGE_BACKEND =
+sig
+  type t
+  type id
+
+  val add_vm: t -> name:string -> vm_stop_mode -> ttl:int -> id Lwt.t
+  (** Add a new VM *)
+
+  val add_vm_dns_name: t -> vm:id -> dns_name:string -> Ipaddr.t -> ttl:int -> unit Lwt.t
+  (** Add a DNS domain to [vm] *)
+
+  val set_vm_config_kv: t -> vm:id -> key:string -> value:string -> string option Lwt.t
+  (** Set a config key/value per for [vm]. Returns the previous value of the key, if any *)
+
+  val get_vm_last_requested_ts: t -> vm:id -> int Lwt.t
+  val set_vm_last_requested_ts: t -> vm:id -> int -> unit Lwt.t
+  val get_vm_requests: t -> vm:id -> int Lwt.t
+  val inc_vm_requests: t -> vm:id -> unit Lwt.t
+
+  val get_vm_enabled: t -> vm:id -> bool Lwt.t
+  val set_vm_enabled: t -> enabled:bool -> unit Lwt.t
+
+  val watch_vm_enabled: t -> (bool -> unit Lwt.t) -> unit Lwt.t
+  val watch_vm_added: t -> (string -> unit Lwt.t) -> unit Lwt.t
+*)
