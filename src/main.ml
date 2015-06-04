@@ -130,7 +130,8 @@ let backend =
   let doc =
     "Which backend to use. Currently only libvirt is supported." in
   Arg.(value & opt (enum [("libvirt" , `Libvirt);
-                          ("libxl", `Libxl)])
+                          ("libxl", `Libxl);
+                          ("xapi", `Xapi)])
          `Libvirt & info ["x" ; "backend" ] ~docv:"BACKEND" ~doc)
 
 
@@ -138,8 +139,11 @@ let jitsu backend connstr bindaddr bindport forwarder forwardport response_delay
     map_domain ttl vm_stop_mode use_synjitsu =
   let (module B) = 
       if backend = `Libvirt then 
-          (module Libvirt_backend : Backends.VM_BACKEND with type t = Libvirt_backend.t) 
-      else (module Libvirt_backend) 
+          (module Libvirt_backend : Backends.VM_BACKEND) 
+      else if backend = `Xapi then
+          (module Xapi_backend : Backends.VM_BACKEND) 
+      else
+      (module Libvirt_backend) 
   in
   let module Jitsu = Jitsu.Make(B) in
   let rec maintenance_thread t timeout =
@@ -161,10 +165,8 @@ let jitsu backend connstr bindaddr bindport forwarder forwardport response_delay
       )
      >>= fun forward_resolver ->
      log (Printf.sprintf "Connecting to %s...\n" connstr);
-     begin
-     match backend with
-     | `Libvirt | _ -> Libvirt_backend.connect connstr
-     end >>= fun r ->
+     B.connect connstr
+     >>= fun r ->
      match r with
      | `Error _ -> raise (Failure "Unable to connect to backend") 
      | `Ok backend_t ->
