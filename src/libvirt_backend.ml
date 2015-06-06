@@ -90,8 +90,10 @@ let resume_vm t vm =
       Libvirt.Domain.resume domain
     )
 
+let unsuspend_vm t vm = Lwt.return (`Ok ())
+
 let start_vm t vm =
-  try_libvirt "Unable to resume VM" (fun () -> 
+  try_libvirt "Unable to start VM" (fun () -> 
       let domain = Libvirt.Domain.lookup_by_uuid t.connection vm.uuid in
       Libvirt.Domain.create domain
     )

@@ -58,7 +58,7 @@ module Make (Backend : Backends.VM_BACKEND) = struct
 
   let connect t =
     (* TODO clean up exception mess *)
-    try_lwt 
+    try_lwt
       if !(t.is_connecting) = false then
         begin
           t.is_connecting := true;

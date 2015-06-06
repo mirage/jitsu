@@ -81,6 +81,7 @@ module Make (Backend : Backends.VM_BACKEND) = struct
     | Backends.VmInfoShutdown -> "shutdown"
     | Backends.VmInfoShutoff -> "shutoff"
     | Backends.VmInfoCrashed -> "crashed"
+    | Backends.VmInfoSuspended -> "suspended"
 
   let or_backend_error msg fn t =
     fn t >>= function
@@ -158,6 +159,9 @@ module Make (Backend : Backends.VM_BACKEND) = struct
       vm.total_starts <- vm.total_starts + 1;
       (* sleeping a bit *)
       Lwt_unix.sleep vm.query_response_delay
+    | Backends.VmInfoSuspended ->
+      t.log " --! Unsuspending VM...\n";
+      or_backend_error "Unable to resume VM" (Backend.unsuspend_vm t.backend) vm.vm 
     | Backends.VmInfoBlocked 
     | Backends.VmInfoCrashed
     | Backends.VmInfoNoState ->

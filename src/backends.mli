@@ -15,7 +15,7 @@
  *)
 
 type vm_stop_mode = VmStopDestroy | VmStopSuspend | VmStopShutdown
-type vm_state = VmInfoRunning | VmInfoPaused | VmInfoShutoff | VmInfoShutdown | VmInfoBlocked | VmInfoCrashed | VmInfoNoState
+type vm_state = VmInfoRunning | VmInfoPaused | VmInfoShutoff | VmInfoShutdown | VmInfoBlocked | VmInfoCrashed | VmInfoNoState | VmInfoSuspended
 type uuid = string
 type error = [ `Not_found | `Disconnected | `Unknown of string ]
 
@@ -24,6 +24,8 @@ sig
   type t
   type vm
 
+  val connect : string -> [ `Ok of t | `Error of error ] Lwt.t
+  (** **)
   val lookup_vm_by_uuid : t -> uuid -> [ `Ok of vm | `Error of error ] Lwt.t
   (** Lookup a VM by UUID *)
   val lookup_vm_by_name : t -> string -> [ `Ok of vm | `Error of error ] Lwt.t
@@ -49,6 +51,8 @@ sig
   (** Destroy VM *)
   val resume_vm : t -> vm -> [ `Ok of unit | `Error of error ] Lwt.t
   (** Resume VM *)
+  val unsuspend_vm : t -> vm -> [ `Ok of unit | `Error of error ] Lwt.t
+  (** Unsuspend VM (for xapi backend) *)
   val start_vm : t -> vm -> [ `Ok of unit | `Error of error] Lwt.t
   (** Start VM *)
 
