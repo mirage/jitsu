@@ -142,6 +142,11 @@ let jitsu backend connstr bindaddr bindport forwarder forwardport response_delay
       else (module Libvirt_backend) 
   in
   let module Jitsu = Jitsu.Make(B) in
+  let map_domain = 
+      List.map (fun (dns_name, ip, vm_name) ->
+          ((Dns.Name.of_string dns_name), (Ipaddr.V4.of_string_exn ip), vm_name)
+      ) map_domain 
+  in
   let rec maintenance_thread t timeout =
     Lwt_unix.sleep timeout >>= fun () ->
     log ".";
@@ -171,11 +176,11 @@ let jitsu backend connstr bindaddr bindport forwarder forwardport response_delay
        or_abort (fun () -> Jitsu.create backend_t log forward_resolver ~use_synjitsu ()) >>= fun t ->
        Lwt.choose [(
            (* main thread, DNS server *)
-           let triple (dns,ip,name) =
-             log (Printf.sprintf "Adding domain '%s' for VM '%s' with ip %s\n" dns name ip);
-             or_abort (fun () -> Jitsu.add_vm t ~domain:dns ~name (Ipaddr.V4.of_string_exn ip) vm_stop_mode ~delay:response_delay ~ttl)
+           let add (dns_name,vm_ip,vm_name) =
+             log (Printf.sprintf "Adding domain '%s' for VM '%s' with ip %s\n" (Dns.Name.to_string dns_name) vm_name (Ipaddr.V4.to_string vm_ip));
+             or_abort (fun () -> Jitsu.add_vm t ~dns_names:[dns_name] ~vm_name ~vm_ip ~vm_stop_mode ~response_delay ~dns_ttl:ttl)
            in
-           Lwt_list.iter_p triple map_domain
+           Lwt_list.iter_p add map_domain
            >>= fun () ->
            log (Printf.sprintf "Starting server on %s:%d...\n" bindaddr bindport);
            let processor = ((Dns_server.processor_of_process (Jitsu.process t))

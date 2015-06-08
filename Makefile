@@ -2,7 +2,7 @@ PACKAGES=-package lwt.syntax,lwt,dns.lwt,libvirt,cmdliner,ezxmlm,ipaddr,str,cond
 INCLUDE=
 OPT=-linkpkg -g 
 OCAMLOPT=ocamlopt -w A-4-44
-FILES=vm_stop_mode.ml vm_state.ml backends.mli libvirt_backend.ml irmin_backend.ml synjitsu.mli synjitsu.ml jitsu.mli jitsu.ml main.ml
+FILES=vm_stop_mode.ml vm_state.ml backends.mli libvirt_backend.ml irmin_backend.mli irmin_backend.ml dns_helpers.ml synjitsu.mli synjitsu.ml jitsu.mli jitsu.ml main.ml
 PWD=$(shell pwd)
 SRC=$(PWD)/src
 BIN=$(PWD)/bin
@@ -10,7 +10,7 @@ INSTALLDIR=/usr/local/bin
 
 all: $(BIN)/jitsu
 
-$(BIN)/jitsu: $(SRC)/jitsu.ml $(SRC)/main.ml $(SRC)/synjitsu.mli $(SRC)/synjitsu.ml $(SRC)/jitsu.mli $(SRC)/libvirt_backend.ml $(SRC)/backends.mli
+$(BIN)/jitsu: $(addprefix $(SRC)/, $(FILES))
 	mkdir -p $(BIN)
 	cd $(SRC) ; ocamlfind $(OCAMLOPT) $(INCLUDE) $(PACKAGES) $(OPT) $(FILES) -o $(BIN)/jitsu -syntax camlp4o
 
@@ -19,12 +19,8 @@ install: $(BIN)/jitsu
 	install -s $(BIN)/jitsu $(INSTALLDIR)/jitsu
 
 clean:
-	cd $(SRC) ; rm -f jitsu jitsu.{cmx,cmi,o}
-	cd $(SRC) ; rm -f main.{o,cmi,cmx}
-	cd $(SRC) ; rm -f backends.{o,cmi,cmx}
-	cd $(SRC) ; rm -f vm_stop_mode.{o,cmi,cmx}
-	cd $(SRC) ; rm -f vm_state.{o,cmi,cmx}
-	cd $(SRC) ; rm -f libvirt_backend.{o,cmi,cmx}
-	cd $(SRC) ; rm -f synjitsu.{o,cmi,cmx}
-	cd $(SRC) ; rm -f *~ tags
+	cd $(SRC) ; rm -f $(addsuffix .cmi,$(basename $(FILES)))
+	cd $(SRC) ; rm -f $(addsuffix .cmx,$(basename $(FILES)))
+	cd $(SRC) ; rm -f $(addsuffix .o,$(basename $(FILES)))
+	cd $(SRC) ; rm -f jitsu *~ tags
 	cd $(BIN) ; rm -f jitsu

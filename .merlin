@@ -1,5 +1,6 @@
 PKG libvirt
 PKG lwt
+PKG dns
 PKG dns.lwt
 PKG cmdliner
 PKG ezxmlm

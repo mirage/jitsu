@@ -1,4 +1,3 @@
-
 (*
  * Copyright (c) 2015 Magnus Skjegstad <magnus@skjegstad.com>
  *
@@ -15,7 +14,7 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  *)
 
-type t = Destroy | Suspend | Shutdown
+type t = Destroy | Suspend | Shutdown | Unknown
 
 let of_string s =
     if s = "destroy" then
@@ -24,10 +23,14 @@ let of_string s =
     if s = "suspend" then
         Suspend 
     else
-    Shutdown
+    if s = "shutdown" then
+        Shutdown
+    else
+        Unknown
 
 let to_string = function
     | Destroy -> "destroy"
     | Suspend -> "suspend"
     | Shutdown -> "shutdown"
+    | Unknown -> "unknown"
 

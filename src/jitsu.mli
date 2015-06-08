@@ -30,7 +30,7 @@ module Make :
     type t
     (** The type of Jitsu states. *)
 
-    val create: Backend.t -> (string -> unit) -> Dns_resolver_unix.t option -> ?vm_count:int -> ?use_synjitsu:(string option) -> unit -> t Lwt.t
+    val create: Backend.t -> (string -> unit) -> Dns_resolver_unix.t option -> ?use_synjitsu:(string option) -> unit -> t Lwt.t
     (** [create backend log_function resolver vm_count use_synjitsu] creates a new Jitsu instance, 
         where vm_count is the initial size of the hash table and use_synjitsu is the optional 
         name or uuid of a synjitsu unikernel. *)
@@ -39,9 +39,12 @@ module Make :
     (** Process function for ocaml-dns. Starts new VMs from DNS queries or
         forwards request to a fallback resolver *)
 
-    val add_vm: t -> domain:string -> name:string -> Ipaddr.V4.t -> Vm_stop_mode.t ->
-      delay:float -> ttl:int -> unit Lwt.t
-    (** [add_vm t domain name ip stop_mode delay ttl] adds a VM to be
+    val add_vm: t -> 
+      vm_name:string -> vm_ip:Ipaddr.V4.t -> vm_stop_mode:Vm_stop_mode.t ->
+      dns_names:(Dns.Name.t list) -> dns_ttl:int -> 
+      response_delay:float -> 
+      unit Lwt.t
+    (** [add_vm t vm_name vm_stop_mode dns_name dns_ip dns_ttl response_delay] adds a VM to be
         monitored by jitsu.  FIXME. *)
 
     val stop_expired_vms: t -> unit Lwt.t
