@@ -27,12 +27,12 @@ let to_string = function
 (* convert string to vm state. *)
 let of_string s =
   if s = "running" then
-     Running
+    Running
   else
   if s = "paused" then
-     Paused
+    Paused
   else
   if s = "off" then
-     Off
+    Off
   else
-  Unknown
+    Unknown

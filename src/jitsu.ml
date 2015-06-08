@@ -46,17 +46,17 @@ module Make (Vm_backend : Backends.VM_BACKEND) = struct
       vm_backend;
       forward_resolver = forward_resolver;
       synjitsu ;
-  }
+    }
 
-    let string_of_float_option ?none:(none="N/A") f =
-        match f with
-        | None -> none
-        | Some f -> string_of_float f
+  let string_of_float_option ?none:(none="N/A") f =
+    match f with
+    | None -> none
+    | Some f -> string_of_float f
 
-    let float_of_float_option f =
-        match f with
-        | None -> 0.0
-        | Some f -> f
+  let float_of_float_option f =
+    match f with
+    | None -> 0.0
+    | Some f -> f
 
 
   let or_vm_backend_error msg fn t =
@@ -83,7 +83,7 @@ module Make (Vm_backend : Backends.VM_BACKEND) = struct
       Irmin_backend.get_stop_mode t.storage ~vm_name >>= fun stop_mode ->
       begin match stop_mode with
         | Vm_stop_mode.Unknown -> t.log (Printf.sprintf "Unable to stop VM %s. Unknown stop mode requested\n" vm_name); 
-                                  Lwt.return_unit
+          Lwt.return_unit
         | Vm_stop_mode.Shutdown -> t.log (Printf.sprintf "VM shutdown: %s\n" vm_name);
           or_vm_backend_error "Unable to shutdown VM" (Vm_backend.shutdown_vm t.vm_backend) vm
         | Vm_stop_mode.Suspend  -> t.log (Printf.sprintf "VM suspend: %s\n" vm_name);
@@ -149,20 +149,20 @@ module Make (Vm_backend : Backends.VM_BACKEND) = struct
 
   let get_stats t vm =
     (*get_vm_name t vm >>= fun vm_name ->
-    get_vm_state t vm >>= fun vm_state ->
-    Irmin_backend.get_total_starts t.storage ~vm_name >>= fun vm_total_starts ->
-    Irmin_backend.get_start_timestamp t.storage ~vm_name >>= fun vm_started_ts ->
-    let string_of_float_option f =
+      get_vm_state t vm >>= fun vm_state ->
+      Irmin_backend.get_total_starts t.storage ~vm_name >>= fun vm_total_starts ->
+      Irmin_backend.get_start_timestamp t.storage ~vm_name >>= fun vm_started_ts ->
+      let string_of_float_option f =
         match f with
         | None -> "N/A"
         | Some f -> string_of_float f
-    in
-    let float_of_float_option f =
+      in
+      let float_of_float_option f =
         match f with
         | None -> 0.0
         | Some f -> f
-    in
-    let result_str = 
+      in
+      let result_str = 
         (* TODO list DNS + TTL *)
       Printf.sprintf "VM: %s\n\
                      \ state: %s\n\
@@ -178,8 +178,8 @@ module Make (Vm_backend : Backends.VM_BACKEND) = struct
         (string_of_float_option vm_requested_ts)
         ((float_of_float_option vm_requested_ts) - (float_of_float_option vm_started_ts)) 
         vm.vm_ttl
-    in
-    Lwt.return result_str*)
+      in
+      Lwt.return result_str*)
     Lwt.return "stats temp disabled"
 
   (* add vm to be monitored by jitsu *)
@@ -192,7 +192,7 @@ module Make (Vm_backend : Backends.VM_BACKEND) = struct
     Irmin_backend.add_vm t.storage ~vm_name ~vm_mac ~vm_ip ~vm_stop_mode ~response_delay >>= fun () ->
     Lwt_list.iter_s (fun dns_name ->
         Irmin_backend.add_vm_dns t.storage ~vm_name ~dns_name ~dns_ttl
-    ) dns_names
+      ) dns_names
 
 
   (* iterate through t.name_table and stop VMs that haven't received
@@ -208,30 +208,30 @@ module Make (Vm_backend : Backends.VM_BACKEND) = struct
         | Vm_state.Paused 
         | Vm_state.Unknown -> Lwt.return_none (* VM already stopped/paused/crashed.. *)
         | Vm_state.Running -> 
-            (* Get list of DNS domains that have been requested (has requested timestamp != None) and has NOT expired (timestamp is younger than ttl*2) *)
-            Irmin_backend.get_vm_dns_name_list t.storage ~vm_name >>= fun dns_name_list ->
-            Lwt_list.filter_map_s (fun dns_name ->
-                Irmin_backend.get_last_request_timestamp t.storage ~vm_name ~dns_name >>= fun r ->
-                match r with
-                | None -> Lwt.return_none (* name not requested, can't expire *)
-                | Some last_request_ts ->
-                    let current_time = Unix.time () in
-                    Irmin_backend.get_ttl t.storage ~vm_name ~dns_name >>= fun ttl ->
-                    if (current_time -. last_request_ts) <= (float_of_int (ttl * 2)) then
-                        Lwt.return (Some dns_name)
-                    else
-                        Lwt.return_none
+          (* Get list of DNS domains that have been requested (has requested timestamp != None) and has NOT expired (timestamp is younger than ttl*2) *)
+          Irmin_backend.get_vm_dns_name_list t.storage ~vm_name >>= fun dns_name_list ->
+          Lwt_list.filter_map_s (fun dns_name ->
+              Irmin_backend.get_last_request_timestamp t.storage ~vm_name ~dns_name >>= fun r ->
+              match r with
+              | None -> Lwt.return_none (* name not requested, can't expire *)
+              | Some last_request_ts ->
+                let current_time = Unix.time () in
+                Irmin_backend.get_ttl t.storage ~vm_name ~dns_name >>= fun ttl ->
+                if (current_time -. last_request_ts) <= (float_of_int (ttl * 2)) then
+                  Lwt.return (Some dns_name)
+                else
+                  Lwt.return_none
             ) dns_name_list 
-            >>= fun unexpired_dns_names -> 
-            if (List.length unexpired_dns_names) > 0 then (* If VM has unexpired DNS domains, DON'T terminate *)
-                Lwt.return_none
-            else
-                Lwt.return (Some vm) (* VM has no unexpired DNS domains, can be terminated *)
-    ) vm_name_list >>= fun expired_vms ->
+          >>= fun unexpired_dns_names -> 
+          if (List.length unexpired_dns_names) > 0 then (* If VM has unexpired DNS domains, DON'T terminate *)
+            Lwt.return_none
+          else
+            Lwt.return (Some vm) (* VM has no unexpired DNS domains, can be terminated *)
+      ) vm_name_list >>= fun expired_vms ->
     Lwt_list.iter_s (stop_vm t) expired_vms (* Stop expired VMs *)
 
   (** Process function for ocaml-dns. Starts new VMs from DNS queries or
-     forwards request to a fallback resolver *)
+      forwards request to a fallback resolver *)
   let process t ~src:_ ~dst:_ packet =
     Dns_helpers.create_dns_db t.storage >>= fun dns_db ->
     let open Packet in
@@ -249,35 +249,35 @@ module Make (Vm_backend : Backends.VM_BACKEND) = struct
               Irmin_backend.get_vm_dns_name_list t.storage ~vm_name >>= fun dns_name_list ->
               Lwt_list.filter_map_s (fun dns_name ->
                   if dns_name = q.q_name then (* we found a match, update stats and add to list *)
-                      Irmin_backend.inc_total_requests t.storage ~vm_name ~dns_name >>= fun () ->
-                      Irmin_backend.set_last_request_timestamp t.storage ~vm_name ~dns_name (Unix.time()) >>= fun () ->
-                      t.log (Printf.sprintf "Matching VM is %s with DNS name %s\n" vm_name (Dns.Name.to_string dns_name));
-                      Lwt.return (Some dns_name)
+                    Irmin_backend.inc_total_requests t.storage ~vm_name ~dns_name >>= fun () ->
+                    Irmin_backend.set_last_request_timestamp t.storage ~vm_name ~dns_name (Unix.time()) >>= fun () ->
+                    t.log (Printf.sprintf "Matching VM is %s with DNS name %s\n" vm_name (Dns.Name.to_string dns_name));
+                    Lwt.return (Some dns_name)
                   else
-                      Lwt.return_none
-              ) dns_name_list >>= fun matching_dns_names ->
+                    Lwt.return_none
+                ) dns_name_list >>= fun matching_dns_names ->
               if (List.length matching_dns_names) > 0 then
-                  Lwt.return (Some vm_name)
+                Lwt.return (Some vm_name)
               else
-                  Lwt.return_none
-          ) vm_list >>= fun matching_vm_names ->
+                Lwt.return_none
+            ) vm_list >>= fun matching_vm_names ->
           Lwt_list.filter_map_s (fun vm_name -> (* start VMs and return IPs *)
-            Irmin_backend.get_ip t.storage ~vm_name >>= fun r ->
-            match r with
-            | None -> Lwt.return_none (* no ip, no result to return *)
-            | Some ip ->
+              Irmin_backend.get_ip t.storage ~vm_name >>= fun r ->
+              match r with
+              | None -> Lwt.return_none (* no ip, no result to return *)
+              | Some ip ->
                 or_vm_backend_error "Unable to look up VM name" (Vm_backend.lookup_vm_by_name t.vm_backend) vm_name >>= fun vm ->
                 start_vm t vm >>= fun () ->
                 get_stats t vm >>= fun vm_stats_str ->
                 t.log vm_stats_str;
                 Lwt.return (Some ip)
-          ) matching_vm_names >>= fun list_of_ips ->
+            ) matching_vm_names >>= fun list_of_ips ->
           if (List.length list_of_ips) = 0 then begin
-              t.log (Printf.sprintf "No valid match for %s. Forwarding.\n" (Dns.Name.to_string q.q_name));
-              Dns_helpers.fallback t.forward_resolver q.q_class q.q_type q.q_name
+            t.log (Printf.sprintf "No valid match for %s. Forwarding.\n" (Dns.Name.to_string q.q_name));
+            Dns_helpers.fallback t.forward_resolver q.q_class q.q_type q.q_name
           end else 
-              (* TODO how to return results with multiple IPs - for now just return DNS answer *)
-              return (Some answer)
+            (* TODO how to return results with multiple IPs - for now just return DNS answer *)
+            return (Some answer)
         | _ ->
           t.log (Printf.sprintf "No local match for %s, forwarding...\n"
                    (Name.to_string q.q_name));

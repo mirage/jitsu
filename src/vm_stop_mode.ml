@@ -17,20 +17,20 @@
 type t = Destroy | Suspend | Shutdown | Unknown
 
 let of_string s =
-    if s = "destroy" then
-        Destroy
-    else
-    if s = "suspend" then
-        Suspend 
-    else
-    if s = "shutdown" then
-        Shutdown
-    else
-        Unknown
+  if s = "destroy" then
+    Destroy
+  else
+  if s = "suspend" then
+    Suspend 
+  else
+  if s = "shutdown" then
+    Shutdown
+  else
+    Unknown
 
 let to_string = function
-    | Destroy -> "destroy"
-    | Suspend -> "suspend"
-    | Shutdown -> "shutdown"
-    | Unknown -> "unknown"
+  | Destroy -> "destroy"
+  | Suspend -> "suspend"
+  | Shutdown -> "shutdown"
+  | Unknown -> "unknown"
 

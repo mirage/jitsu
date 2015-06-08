@@ -53,7 +53,7 @@ sig
 end
 
 (*module type STORAGE_BACKEND =
-sig
+  sig
   type t
   type id
 

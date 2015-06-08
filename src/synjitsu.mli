@@ -15,8 +15,8 @@
  *)
 
 module Make :
-functor (Backend : Backends.VM_BACKEND) ->
-sig
+  functor (Backend : Backends.VM_BACKEND) ->
+  sig
     type t
 
     val create : Backend.t -> (string -> unit) -> string -> string -> t
@@ -24,4 +24,4 @@ sig
     val connect : t -> unit Lwt.t
     val send : t -> Cstruct.t -> unit Lwt.t
     val send_garp : t -> Macaddr.t -> Ipaddr.V4.t -> unit Lwt.t
-end
+  end

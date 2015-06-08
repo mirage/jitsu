@@ -137,14 +137,14 @@ let backend =
 let jitsu backend connstr bindaddr bindport forwarder forwardport response_delay 
     map_domain ttl vm_stop_mode use_synjitsu =
   let (module B) = 
-      if backend = `Libvirt then 
-          (module Libvirt_backend : Backends.VM_BACKEND with type t = Libvirt_backend.t) 
-      else (module Libvirt_backend) 
+    if backend = `Libvirt then 
+      (module Libvirt_backend : Backends.VM_BACKEND with type t = Libvirt_backend.t) 
+    else (module Libvirt_backend) 
   in
   let module Jitsu = Jitsu.Make(B) in
   let map_domain = 
-      List.map (fun (dns_name, ip, vm_name) ->
-          ((Dns.Name.of_string dns_name), (Ipaddr.V4.of_string_exn ip), vm_name)
+    List.map (fun (dns_name, ip, vm_name) ->
+        ((Dns.Name.of_string dns_name), (Ipaddr.V4.of_string_exn ip), vm_name)
       ) map_domain 
   in
   let rec maintenance_thread t timeout =
@@ -167,8 +167,8 @@ let jitsu backend connstr bindaddr bindport forwarder forwardport response_delay
      >>= fun forward_resolver ->
      log (Printf.sprintf "Connecting to %s...\n" connstr);
      begin
-     match backend with
-     | `Libvirt | _ -> Libvirt_backend.connect connstr
+       match backend with
+       | `Libvirt | _ -> Libvirt_backend.connect connstr
      end >>= fun r ->
      match r with
      | `Error _ -> raise (Failure "Unable to connect to backend") 
