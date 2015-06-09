@@ -48,16 +48,6 @@ module Make (Vm_backend : Backends.VM_BACKEND) = struct
       synjitsu ;
     }
 
-  let string_of_float_option ?none:(none="N/A") f =
-    match f with
-    | None -> none
-    | Some f -> string_of_float f
-
-  let float_of_float_option f =
-    match f with
-    | None -> 0.0
-    | Some f -> f
-
 
   let or_vm_backend_error msg fn t =
     fn t >>= function
@@ -147,40 +137,52 @@ module Make (Vm_backend : Backends.VM_BACKEND) = struct
       t.log " --! VM cannot be started from this state.\n";
       Lwt.return_unit
 
-  let get_stats t vm =
-    (*get_vm_name t vm >>= fun vm_name ->
-      get_vm_state t vm >>= fun vm_state ->
-      Irmin_backend.get_total_starts t.storage ~vm_name >>= fun vm_total_starts ->
-      Irmin_backend.get_start_timestamp t.storage ~vm_name >>= fun vm_started_ts ->
-      let string_of_float_option f =
-        match f with
-        | None -> "N/A"
-        | Some f -> string_of_float f
-      in
-      let float_of_float_option f =
-        match f with
-        | None -> 0.0
-        | Some f -> f
-      in
-      let result_str = 
-        (* TODO list DNS + TTL *)
-      Printf.sprintf "VM: %s\n\
-                     \ state: %s\n\
-                     \ total requests: %d\n\
-                     \ total starts: %d\n\
-                     \ last start: %s\n\
-                     \ last request: %f (%f seconds since started)\n\
-                     \ vm ttl: %d\n"
-        vm_name (Vm_state.to_string vm_state) 
-        vm.total_requests 
-        vm_total_starts 
-        (string_of_float_option vm_started_ts)
-        (string_of_float_option vm_requested_ts)
-        ((float_of_float_option vm_requested_ts) - (float_of_float_option vm_started_ts)) 
-        vm.vm_ttl
-      in
-      Lwt.return result_str*)
-    Lwt.return "stats temp disabled"
+  let output_stats t vm_names =
+    let current_time = Unix.time () in
+    let ip_option_to_string ip_option = 
+      match ip_option with
+      | None -> "None"
+      | Some ip -> Ipaddr.V4.to_string ip
+    in
+    let ts f =
+      match f with
+      | None -> "Never"
+      | Some f -> (string_of_float ( f -. current_time )) ^ " ago"
+    in
+    Lwt_list.iter_s (fun vm_name ->
+        or_vm_backend_error "Unable to look up VM name" (Vm_backend.lookup_vm_by_name t.vm_backend) vm_name >>= fun vm ->
+        t.log (Printf.sprintf "%15s %10s %10s %10s %10s %10s %30s %15s %8s %8s %8s\n" "VM" "state" "delay" "start_time" "tot_starts" "stop_mode" "DNS" "IP" "TTL" "tot_req" "last_req");
+        get_vm_state t vm >>= fun vm_state ->
+        Irmin_backend.get_ip t.storage ~vm_name >>= fun vm_ip ->
+        Irmin_backend.get_response_delay t.storage ~vm_name >>= fun response_delay ->
+        Irmin_backend.get_start_timestamp t.storage ~vm_name >>= fun start_ts ->
+        Irmin_backend.get_total_starts t.storage ~vm_name >>= fun total_starts ->
+        Irmin_backend.get_stop_mode t.storage ~vm_name >>= fun stop_mode ->
+        let first_part = (Printf.sprintf "%15s %10s %10f %10s %10d %10s" 
+                            vm_name 
+                            (Vm_state.to_string vm_state)
+                            response_delay
+                            (ts start_ts)
+                            total_starts
+                            (Vm_stop_mode.to_string stop_mode)) 
+        in
+        (* Get list of DNS domains for this vm_name *)
+        Irmin_backend.get_vm_dns_name_list t.storage ~vm_name >>= fun dns_name_list ->
+        Lwt_list.iter_s (fun dns_name ->
+            Irmin_backend.get_last_request_timestamp t.storage ~vm_name ~dns_name >>= fun last_request_ts ->
+            Irmin_backend.get_total_requests t.storage ~vm_name ~dns_name >>= fun total_requests ->
+            Irmin_backend.get_ttl t.storage ~vm_name ~dns_name >>= fun ttl ->
+            t.log (first_part ^ (Printf.sprintf " %30s %15s %8d %8d %7s\n" 
+                                   (Dns.Name.to_string dns_name)
+                                   (ip_option_to_string vm_ip)
+                                   ttl
+                                   total_requests
+                                   (ts last_request_ts)));
+            Lwt.return_unit
+          ) dns_name_list >>= fun () ->
+        if dns_name_list = [] then
+          t.log "\n";
+        Lwt.return_unit) vm_names
 
   (* add vm to be monitored by jitsu *)
   let add_vm t ~vm_name ~vm_ip ~vm_stop_mode ~dns_names ~dns_ttl ~response_delay =
@@ -268,8 +270,7 @@ module Make (Vm_backend : Backends.VM_BACKEND) = struct
               | Some ip ->
                 or_vm_backend_error "Unable to look up VM name" (Vm_backend.lookup_vm_by_name t.vm_backend) vm_name >>= fun vm ->
                 start_vm t vm >>= fun () ->
-                get_stats t vm >>= fun vm_stats_str ->
-                t.log vm_stats_str;
+                output_stats t [vm_name] >>= fun () ->
                 Lwt.return (Some ip)
             ) matching_vm_names >>= fun list_of_ips ->
           if (List.length list_of_ips) = 0 then begin
