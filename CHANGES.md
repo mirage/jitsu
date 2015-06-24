@@ -9,6 +9,7 @@
 - Update to ocaml-dns 0.15.0
 - Support more than one DNS name per VM
 - Add irmin storage backend support
+- Add *experimental* XAPI backend support
 - General cleanup
 
 0.1 
