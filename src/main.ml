@@ -128,9 +128,8 @@ let or_warn_lwt msg f =
 
 let backend =
   let doc =
-    "Which backend to use. Currently only libvirt is supported." in
+    "Which backend to use. Currently libvirt and xapi (experimental) is supported." in
   Arg.(value & opt (enum [("libvirt" , `Libvirt);
-                          ("libxl", `Libxl);
                           ("xapi", `Xapi)])
          `Libvirt & info ["x" ; "backend" ] ~docv:"BACKEND" ~doc)
 
