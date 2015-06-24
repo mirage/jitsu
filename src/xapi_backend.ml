@@ -83,10 +83,10 @@ let connect connstr =
 
 (* convert vm state to string *)
 let xapi_state_to_vm_state = function
-  | `Running -> Backends.VmInfoRunning
-  | `Paused -> Backends.VmInfoPaused
-  | `Halted -> Backends.VmInfoShutdown
-  | `Suspended -> Backends.VmInfoSuspended
+  | `Running -> Vm_state.Running 
+  | `Paused -> Vm_state.Paused
+  | `Halted -> Vm_state.Off
+  | `Suspended -> Vm_state.Suspended
 
 let lookup_vm_by_uuid t vm_uuid =
   (* We use UUID for internal representation, but call lookup anyway to make sure it exists *)
@@ -136,14 +136,21 @@ let suspend_vm t vm =
     VM.suspend ~rpc:rpc ~session_id:session_id ~vm:domain
   )
 
-let resume_vm t vm = (* from pause state *)
+let pause_vm t vm =
+  try_xapi "Unable to suspend VM" (fun () -> 
+    let (rpc, session_id) = t.connection in
+    lwt domain = VM.get_by_uuid ~rpc:rpc ~session_id:session_id ~uuid:vm.uuid in
+    VM.pause ~rpc:rpc ~session_id:session_id ~vm:domain
+  )
+
+let unpause_vm t vm = (* from pause state *)
   try_xapi "Unable to resume VM" (fun () -> 
     let (rpc, session_id) = t.connection in
     lwt domain = VM.get_by_uuid ~rpc:rpc ~session_id:session_id ~uuid:vm.uuid in
     VM.unpause ~rpc:rpc ~session_id:session_id ~vm:domain
   )
 
-let unsuspend_vm t vm = (* from suspended state *)
+let resume_vm t vm = (* from suspended state *)
   try_xapi "Unable to unsuspend VM" (fun () -> 
     let (rpc, session_id) = t.connection in
     lwt domain = VM.get_by_uuid ~rpc:rpc ~session_id:session_id ~uuid:vm.uuid in

@@ -17,73 +17,39 @@
 open Lwt
 open Dns
 
-module Make (Backend : Backends.VM_BACKEND) = struct
-  module Synjitsu = Synjitsu.Make(Backend)
-
-  type vm_metadata = {
-    vm : Backend.vm;              (* Backend VM representation *)
-    ip : Ipaddr.V4.t;             (* IP addr of this domain *)
-
-    query_response_delay : float; (* in seconds, delay after startup before
-                                     sending query response *)
-    vm_ttl : int;                 (* TTL in seconds. VM is stopped [vm_ttl]
-                                     seconds after [requested_ts] *)
-    how_to_stop : Backends.vm_stop_mode;   (* how to stop the VM on timeout *)
-    mutable started_ts : int;     (* started timestamp *)
-    mutable requested_ts : int;   (* last request timestamp *)
-    mutable total_requests : int;
-    mutable total_starts : int;
-  }
+module Make (Vm_backend : Backends.VM_BACKEND) = struct
+  module Synjitsu = Synjitsu.Make(Vm_backend)
 
   type t = {
-    db : Loader.db;                         (* DNS database *)
+    mutable dns_db : Loader.db;                         (* DNS database *)
+    storage : Irmin_backend.t;
     log : string -> unit;                   (* Log function *) 
-    backend : Backend.t;                          (* Backend type *)
+    vm_backend : Vm_backend.t;                          (* Backend type *)
     forward_resolver : Dns_resolver_unix.t option; (* DNS to forward request to if no
                                                       local match *)
     synjitsu : Synjitsu.t option;
-    domain_table : (Name.t, vm_metadata) Hashtbl.t;
-    (* vm hash table indexed by domain *)
-    name_table : (string, vm_metadata) Hashtbl.t;
-    (* vm hash table indexed by vm name *)
   }
 
-  let create backend log forward_resolver ?vm_count:(vm_count=7) ?use_synjitsu:(use_synjitsu=None) () =
+  let create vm_backend log forward_resolver ?use_synjitsu:(use_synjitsu=None) () =
+    (* initialise synjitsu *)
     let synjitsu = match use_synjitsu with
-      | Some domain -> let t = (Synjitsu.create backend log domain "synjitsu") in
+      | Some domain -> let t = (Synjitsu.create vm_backend log domain "synjitsu") in
         ignore_result (Synjitsu.connect t);  (* connect in background *)
         Some t
       | None -> None
     in
-    { db = Loader.new_db ();
-      log = log; 
-      backend;
+    Irmin_backend.create ~persist:false ~root:"/tmp/jitsu" () >>= fun storage ->
+    Lwt.return { 
+      dns_db = Loader.new_db ();
+      storage;
+      log; 
+      vm_backend;
       forward_resolver = forward_resolver;
-      synjitsu;
-      domain_table = Hashtbl.create ~random:true vm_count;
-      name_table = Hashtbl.create ~random:true vm_count }
+      synjitsu ;
+    }
 
-  (* fallback to external resolver if local lookup fails *)
-  let fallback t _class _type _name =
-    match t.forward_resolver with
-    | Some f -> 
-      Dns_resolver_unix.resolve f _class _type _name
-      >>= fun result ->
-      return (Some (Dns.Query.answer_of_response result))
-    | None -> return None
 
-  (* convert vm state to string *)
-  let string_of_vm_state = function
-    | Backends.VmInfoNoState -> "no state"
-    | Backends.VmInfoRunning -> "running"
-    | Backends.VmInfoBlocked -> "blocked"
-    | Backends.VmInfoPaused -> "paused"
-    | Backends.VmInfoShutdown -> "shutdown"
-    | Backends.VmInfoShutoff -> "shutoff"
-    | Backends.VmInfoCrashed -> "crashed"
-    | Backends.VmInfoSuspended -> "suspended"
-
-  let or_backend_error msg fn t =
+  let or_vm_backend_error msg fn t =
     fn t >>= function
     | `Error e -> begin
         match e with 
@@ -93,232 +59,240 @@ module Make (Backend : Backends.VM_BACKEND) = struct
       end
     | `Ok t -> return t
 
-
   let get_vm_name t vm =
-    or_backend_error "Unable to get VM name from backend" (Backend.get_name t.backend) vm.vm
+    or_vm_backend_error "Unable to get VM name from backend" (Vm_backend.get_name t.vm_backend) vm
 
   let get_vm_state t vm =
-    or_backend_error "Unable to get VM state from backend" (Backend.get_state t.backend) vm.vm
+    or_vm_backend_error "Unable to get VM state from backend" (Vm_backend.get_state t.vm_backend) vm
 
   let stop_vm t vm =
     get_vm_name t vm >>= fun vm_name ->
     get_vm_state t vm >>= fun vm_state ->
     match vm_state with
-    | Backends.VmInfoRunning ->
-      begin match vm.how_to_stop with
-        | Backends.VmStopShutdown -> t.log (Printf.sprintf "VM shutdown: %s\n" vm_name);
-          or_backend_error "Unable to shutdown VM" (Backend.shutdown_vm t.backend) vm.vm
-        | Backends.VmStopSuspend  -> t.log (Printf.sprintf "VM suspend: %s\n" vm_name);
-          or_backend_error "Unable to suspend VM" (Backend.suspend_vm t.backend) vm.vm
-        | Backends.VmStopDestroy  -> t.log (Printf.sprintf "VM destroy: %s\n" vm_name) ; 
-          or_backend_error "Unable to destroy VM" (Backend.destroy_vm t.backend) vm.vm
+    | Vm_state.Running ->
+      Irmin_backend.get_stop_mode t.storage ~vm_name >>= fun stop_mode ->
+      begin match stop_mode with
+        | Vm_stop_mode.Unknown -> t.log (Printf.sprintf "Unable to stop VM %s. Unknown stop mode requested\n" vm_name); 
+          Lwt.return_unit
+        | Vm_stop_mode.Shutdown -> t.log (Printf.sprintf "VM shutdown: %s\n" vm_name);
+          or_vm_backend_error "Unable to shutdown VM" (Vm_backend.shutdown_vm t.vm_backend) vm
+        | Vm_stop_mode.Suspend  -> t.log (Printf.sprintf "VM suspend: %s\n" vm_name);
+          or_vm_backend_error "Unable to suspend VM" (Vm_backend.suspend_vm t.vm_backend) vm
+        | Vm_stop_mode.Destroy  -> t.log (Printf.sprintf "VM destroy: %s\n" vm_name) ; 
+          or_vm_backend_error "Unable to destroy VM" (Vm_backend.destroy_vm t.vm_backend) vm
       end
-    | _ -> Lwt.return_unit (* VM already stopped *)
+    | Vm_state.Off
+    | Vm_state.Paused 
+    | Vm_state.Suspended
+    | Vm_state.Unknown -> Lwt.return_unit (* VM already stopped or nothing we can do... *)
 
   let start_vm t vm =
     get_vm_name t vm >>= fun vm_name ->
     get_vm_state t vm >>= fun vm_state ->
-    t.log (Printf.sprintf "Starting %s (%s)" vm_name (string_of_vm_state vm_state));
+    t.log (Printf.sprintf "Starting %s (%s)" vm_name (Vm_state.to_string vm_state));
+    let update_stats () =
+      Irmin_backend.set_start_timestamp t.storage ~vm_name (Unix.time ()) >>= fun () ->
+      Irmin_backend.inc_total_starts t.storage ~vm_name
+    in
+    let notify_synjitsu () =
+      Irmin_backend.get_ip t.storage ~vm_name >>= fun r ->
+      match r with
+      | Some ip -> begin
+          or_vm_backend_error "Unable to get MAC for VM" (Vm_backend.get_mac t.vm_backend) vm >>= fun vm_mac ->
+          match vm_mac with
+          | Some m -> begin
+              match t.synjitsu with
+              | Some s -> begin
+                  t.log (Printf.sprintf "Notifying Synjitsu of MAC %s\n" (Macaddr.to_string m));
+                  try_lwt 
+                    Synjitsu.send_garp s m ip
+                  with e -> 
+                    t.log (Printf.sprintf "Got exception %s\n" (Printexc.to_string e)); 
+                    Lwt.return_unit
+                end
+              | None -> Lwt.return_unit
+            end
+          | None -> Lwt.return_unit
+        end
+      | None -> t.log (Printf.sprintf "VM %s has no IP. Synjitsu not notified." vm_name); Lwt.return_unit
+    in
     match vm_state with
-    | Backends.VmInfoRunning -> (* Already running, exit *)
+    | Vm_state.Running -> (* Already running, exit *)
       t.log " --! VM is already running\n";
       Lwt.return_unit
-    | Backends.VmInfoPaused 
-    | Backends.VmInfoShutdown 
-    | Backends.VmInfoShutoff ->
-      (* Try to start VM *)
-      begin
-        match vm_state with
-        | Backends.VmInfoPaused ->
-          t.log " --> resuming vm...\n";
-          or_backend_error "Unable to resume VM" (Backend.resume_vm t.backend) vm.vm 
-        | _ ->
-          t.log " --> creating vm...\n";
-          or_backend_error "Unable to create VM" (Backend.start_vm t.backend) vm.vm
-      end >>= fun () ->
-      (* Notify Synjitsu *)
-      or_backend_error "Unable to get MAC for VM" (Backend.get_mac t.backend) vm.vm >>= fun vm_mac ->
-      begin
-        match vm_mac with
-        | Some m -> begin
-            match t.synjitsu with
-            | Some s -> begin
-                t.log (Printf.sprintf "Notifying Synjitsu of MAC %s\n" (Macaddr.to_string m));
-                try_lwt 
-                  Synjitsu.send_garp s m vm.ip 
-                with e -> 
-                  t.log (Printf.sprintf "Got exception %s\n" (Printexc.to_string e)); 
-                  Lwt.return_unit
-              end
-            | None -> Lwt.return_unit
-          end
-        | None -> Lwt.return_unit
-      end >>= fun _ ->
-      (* update stats *)
-      vm.started_ts <- truncate (Unix.time());
-      vm.total_starts <- vm.total_starts + 1;
-      (* sleeping a bit *)
-      Lwt_unix.sleep vm.query_response_delay
-    | Backends.VmInfoSuspended ->
-      t.log " --! Unsuspending VM...\n";
-      or_backend_error "Unable to resume VM" (Backend.unsuspend_vm t.backend) vm.vm 
-    | Backends.VmInfoBlocked 
-    | Backends.VmInfoCrashed
-    | Backends.VmInfoNoState ->
+    | Vm_state.Suspended ->
+      t.log " --> resuming vm...\n";
+      or_vm_backend_error "Unable to resume VM" (Vm_backend.resume_vm t.vm_backend) vm >>= fun () ->
+      Lwt.async(notify_synjitsu);
+      update_stats () >>= fun () ->
+      Irmin_backend.get_response_delay t.storage ~vm_name >>= fun delay ->
+      Lwt_unix.sleep delay
+    | Vm_state.Paused ->
+      t.log " --> unpausing vm...\n";
+      or_vm_backend_error "Unable to unpause VM" (Vm_backend.unpause_vm t.vm_backend) vm >>= fun () ->
+      Lwt.async(notify_synjitsu);
+      update_stats () >>= fun () ->
+      Irmin_backend.get_response_delay t.storage ~vm_name >>= fun delay ->
+      Lwt_unix.sleep delay
+    | Vm_state.Off ->
+      t.log " --> creating vm...\n";
+      or_vm_backend_error "Unable to create VM" (Vm_backend.start_vm t.vm_backend) vm >>= fun () ->
+      Lwt.async(notify_synjitsu);
+      update_stats () >>= fun () ->
+      Irmin_backend.get_response_delay t.storage ~vm_name >>= fun delay ->
+      Lwt_unix.sleep delay
+    | Vm_state.Unknown ->
       t.log " --! VM cannot be started from this state.\n";
       Lwt.return_unit
 
-  let get_vm_metadata_by_domain t domain =
-    try Some (Hashtbl.find t.domain_table domain)
-    with Not_found -> None
-
-  let get_vm_metadata_by_name t name =
-    try Some (Hashtbl.find t.name_table name)
-    with Not_found -> None
-
-  let get_stats t vm =
-    get_vm_name t vm >>= fun vm_name ->
-    get_vm_state t vm >>= fun vm_state ->
-    let result_str = 
-      Printf.sprintf "VM: %s\n\
-                     \ state: %s\n\
-                     \ total requests: %d\n\
-                     \ total starts: %d\n\
-                     \ last start: %d\n\
-                     \ last request: %d (%d seconds since started)\n\
-                     \ vm ttl: %d\n"
-        vm_name (string_of_vm_state vm_state) vm.total_requests vm.total_starts vm.started_ts vm.requested_ts
-        (vm.requested_ts - vm.started_ts) vm.vm_ttl
+  let output_stats t vm_names =
+    let current_time = Unix.time () in
+    let ip_option_to_string ip_option = 
+      match ip_option with
+      | None -> "None"
+      | Some ip -> Ipaddr.V4.to_string ip
     in
-    Lwt.return result_str
-
-  (* Process function for ocaml-dns. Starts new VMs from DNS queries or
-     forwards request to a fallback resolver *)
-  let process t ~src:_ ~dst:_ packet =
-    let open Packet in
-    match packet.questions with
-    | [] -> return_none;
-    | [q] -> begin
-        let answer = Query.(answer q.q_name q.q_type t.db.Loader.trie) in
-        match answer.Query.rcode with
-        | Packet.NoError ->
-          t.log (Printf.sprintf "Local match for domain %s\n"
-                   (Name.to_string q.q_name));
-          (* look for vm in hash table *)
-          let vm = get_vm_metadata_by_domain t q.q_name in
-          begin match vm with
-            | Some vm -> begin (* there is a match *)
-                get_vm_name t vm >>= fun vm_name ->
-                t.log (Printf.sprintf "Matching VM is %s\n" vm_name);
-                (* update stats *)
-                vm.total_requests <- vm.total_requests + 1;
-                vm.requested_ts <- int_of_float (Unix.time());
-                start_vm t vm >>= fun () ->
-                (* print stats *)
-                get_stats t vm >>= fun vm_stats_str ->
-                t.log vm_stats_str;
-                return (Some answer);
-              end;
-            | None -> (* no match, fall back to resolver *)
-              t.log "No known VM. Forwarding to next resolver...\n";
-              fallback t q.q_class q.q_type q.q_name
-          end
-        | _ ->
-          t.log (Printf.sprintf "No local match for %s, forwarding...\n"
-                   (Name.to_string q.q_name));
-          fallback t q.q_class q.q_type q.q_name
-      end
-    | _ -> return_none
-
-  (* Add domain SOA record. Called automatically from add_vm if domain
-     is not registered in local DB as a SOA record *)
-  let add_soa t soa_domain ttl =
-    Loader.add_soa_rr Name.empty Name.empty
-      (Int32.of_int (int_of_float (Unix.time())))
-      (Int32.of_int ttl)
-      (Int32.of_int 3)
-      (Int32.of_int (ttl*2))
-      (Int32.of_int (ttl*2))
-      (Int32.of_int ttl)
-      soa_domain
-      t.db
-
-  (* true if a dns record exists locally for [domain] of [_type] *)
-  let has_local_domain t domain _type =
-    let answer = Query.(answer domain _type t.db.Loader.trie) in
-    match answer.Query.rcode with
-    | Packet.NoError -> true
-    | _ -> false
-
-  (* return base of domain. E.g. www.example.org = example.org, a.b.c.d = c.d *)
-  let get_base_domain domain =
-    Name.of_string_list (List.tl (Name.to_string_list domain))
+    let ts f =
+      match f with
+      | None -> "Never"
+      | Some f -> (string_of_float ( f -. current_time )) ^ " ago"
+    in
+    Lwt_list.iter_s (fun vm_name ->
+        or_vm_backend_error "Unable to look up VM name" (Vm_backend.lookup_vm_by_name t.vm_backend) vm_name >>= fun vm ->
+        t.log (Printf.sprintf "%15s %10s %10s %10s %10s %10s %30s %15s %8s %8s %8s\n" "VM" "state" "delay" "start_time" "tot_starts" "stop_mode" "DNS" "IP" "TTL" "tot_req" "last_req");
+        get_vm_state t vm >>= fun vm_state ->
+        Irmin_backend.get_ip t.storage ~vm_name >>= fun vm_ip ->
+        Irmin_backend.get_response_delay t.storage ~vm_name >>= fun response_delay ->
+        Irmin_backend.get_start_timestamp t.storage ~vm_name >>= fun start_ts ->
+        Irmin_backend.get_total_starts t.storage ~vm_name >>= fun total_starts ->
+        Irmin_backend.get_stop_mode t.storage ~vm_name >>= fun stop_mode ->
+        let first_part = (Printf.sprintf "%15s %10s %10f %10s %10d %10s" 
+                            vm_name 
+                            (Vm_state.to_string vm_state)
+                            response_delay
+                            (ts start_ts)
+                            total_starts
+                            (Vm_stop_mode.to_string stop_mode)) 
+        in
+        (* Get list of DNS domains for this vm_name *)
+        Irmin_backend.get_vm_dns_name_list t.storage ~vm_name >>= fun dns_name_list ->
+        Lwt_list.iter_s (fun dns_name ->
+            Irmin_backend.get_last_request_timestamp t.storage ~vm_name ~dns_name >>= fun last_request_ts ->
+            Irmin_backend.get_total_requests t.storage ~vm_name ~dns_name >>= fun total_requests ->
+            Irmin_backend.get_ttl t.storage ~vm_name ~dns_name >>= fun ttl ->
+            t.log (first_part ^ (Printf.sprintf " %30s %15s %8d %8d %7s\n" 
+                                   (Dns.Name.to_string dns_name)
+                                   (ip_option_to_string vm_ip)
+                                   ttl
+                                   total_requests
+                                   (ts last_request_ts)));
+            Lwt.return_unit
+          ) dns_name_list >>= fun () ->
+        if dns_name_list = [] then
+          t.log "\n";
+        Lwt.return_unit) vm_names
 
   (* add vm to be monitored by jitsu *)
-  let add_vm t ~domain:domain_as_string ~name:vm_name vm_ip stop_mode
-      ~delay:response_delay ~ttl =
+  let add_vm t ~vm_name ~vm_ip ~vm_stop_mode ~dns_names ~dns_ttl ~response_delay =
     (* check if vm_name exists and set up VM record *)
 
-    or_backend_error "Unable to lookup VM by name" (Backend.lookup_vm_by_name t.backend) vm_name >>= fun vm_dom ->
-    or_backend_error "Unable to get MAC for VM" (Backend.get_mac t.backend) vm_dom >>= fun vm_mac ->
+    or_vm_backend_error "Unable to lookup VM by name" (Vm_backend.lookup_vm_by_name t.vm_backend) vm_name >>= fun vm_dom ->
+    or_vm_backend_error "Unable to get MAC for VM" (Vm_backend.get_mac t.vm_backend) vm_dom >>= fun vm_mac ->
 
-    (match vm_mac with
-     | Some m -> t.log (Printf.sprintf "Domain registered with MAC %s\n" (Macaddr.to_string m))
-     | None -> t.log (Printf.sprintf "Warning: MAC not found for domain. Synjitsu will not be notified..\n"));
-    (* check if SOA is registered and domain is ok *)
-    let domain_t = Name.of_string domain_as_string in
-    let base_domain = get_base_domain domain_t in
-    let answer = has_local_domain t base_domain Packet.Q_SOA in
-    if not answer then (
-      t.log (Printf.sprintf "Adding SOA '%s' with ttl=%d\n"
-               (Name.to_string base_domain) ttl);
-      (* add soa if not registered before *) (* TODO use same ttl? *)
-      add_soa t base_domain ttl;
-    );
-    (* add dns record *)
-    t.log (Printf.sprintf "Adding A PTR for '%s' with ttl=%d and ip=%s\n"
-             (Name.to_string domain_t) ttl (Ipaddr.V4.to_string vm_ip));
-    Loader.add_a_rr vm_ip (Int32.of_int ttl) domain_t t.db;
-    let existing_record = (get_vm_metadata_by_name t vm_name) in
-    (* reuse existing record if possible *)
-    let record = match existing_record with
-      | None -> { vm=vm_dom;
-                  ip=vm_ip;
-                  how_to_stop = stop_mode;
-                  vm_ttl = ttl * 2; (* note *2 here *)
-                  query_response_delay = response_delay;
-                  started_ts = 0;
-                  requested_ts = 0;
-                  total_requests = 0;
-                  total_starts = 0 }
-      | Some existing_record -> existing_record
-    in
-    (* add/replace in both hash tables *)
-    Hashtbl.replace t.domain_table domain_t record;
-    Hashtbl.replace t.name_table vm_name record;
-    return_unit
+    Irmin_backend.add_vm t.storage ~vm_name ~vm_mac ~vm_ip ~vm_stop_mode ~response_delay >>= fun () ->
+    Lwt_list.iter_s (fun dns_name ->
+        Irmin_backend.add_vm_dns t.storage ~vm_name ~dns_name ~dns_ttl
+      ) dns_names
+
 
   (* iterate through t.name_table and stop VMs that haven't received
      requests for more than ttl*2 seconds *)
   let stop_expired_vms t =
-    let expired_vms = Array.make (Hashtbl.length t.name_table) None in
-    (* TODO this should be run in lwt, but hopefully it is reasonably fast this way. *)
-    let current_time = int_of_float (Unix.time ()) in
-    let is_expired vm_meta =
-      current_time - vm_meta.requested_ts > vm_meta.vm_ttl
-    in
-    let pos = ref (-1) in
-    let put_in_array _ vm_meta =
-      incr pos;
-      match is_expired vm_meta with
-      | true  -> expired_vms.(!pos) <- Some vm_meta
-      | false -> expired_vms.(!pos) <- None
-    in
-    Hashtbl.iter put_in_array t.name_table;
-    let stop_vm = function
-      | None    -> Lwt.return_unit
-      | Some vm -> stop_vm t vm
-    in
-    Lwt_stream.iter_s stop_vm (Lwt_stream.of_array expired_vms) 
+    Irmin_backend.get_vm_list t.storage >>= fun vm_name_list ->
+    (* Check for expired names *)
+    Lwt_list.filter_map_s (fun vm_name ->
+        or_vm_backend_error "Unable to look up VM name" (Vm_backend.lookup_vm_by_name t.vm_backend) vm_name >>= fun vm ->
+        get_vm_state t vm >>= fun vm_state ->
+        match vm_state with
+        | Vm_state.Off 
+        | Vm_state.Paused 
+        | Vm_state.Suspended
+        | Vm_state.Unknown -> Lwt.return_none (* VM already stopped/paused/crashed.. *)
+        | Vm_state.Running -> 
+          (* Get list of DNS domains that have been requested (has requested timestamp != None) and has NOT expired (timestamp is younger than ttl*2) *)
+          Irmin_backend.get_vm_dns_name_list t.storage ~vm_name >>= fun dns_name_list ->
+          Lwt_list.filter_map_s (fun dns_name ->
+              Irmin_backend.get_last_request_timestamp t.storage ~vm_name ~dns_name >>= fun r ->
+              match r with
+              | None -> Lwt.return_none (* name not requested, can't expire *)
+              | Some last_request_ts ->
+                let current_time = Unix.time () in
+                Irmin_backend.get_ttl t.storage ~vm_name ~dns_name >>= fun ttl ->
+                if (current_time -. last_request_ts) <= (float_of_int (ttl * 2)) then
+                  Lwt.return (Some dns_name)
+                else
+                  Lwt.return_none
+            ) dns_name_list 
+          >>= fun unexpired_dns_names -> 
+          if (List.length unexpired_dns_names) > 0 then (* If VM has unexpired DNS domains, DON'T terminate *)
+            Lwt.return_none
+          else
+            Lwt.return (Some vm) (* VM has no unexpired DNS domains, can be terminated *)
+      ) vm_name_list >>= fun expired_vms ->
+    Lwt_list.iter_s (stop_vm t) expired_vms (* Stop expired VMs *)
+
+  (** Process function for ocaml-dns. Starts new VMs from DNS queries or
+      forwards request to a fallback resolver *)
+  let process t ~src:_ ~dst:_ packet =
+    Dns_helpers.create_dns_db t.storage >>= fun dns_db ->
+    let open Packet in
+    match packet.questions with
+    | [] -> return_none;
+    | [q] -> begin
+        let answer = Query.(answer q.q_name q.q_type dns_db.Loader.trie) in
+        match answer.Query.rcode with
+        | Packet.NoError ->
+          t.log (Printf.sprintf "Local match for domain %s\n"
+                   (Name.to_string q.q_name));
+          (* look for vms in irmin that have the dns domain registered *)
+          Irmin_backend.get_vm_list t.storage >>= fun vm_list ->
+          Lwt_list.filter_map_s (fun vm_name ->
+              Irmin_backend.get_vm_dns_name_list t.storage ~vm_name >>= fun dns_name_list ->
+              Lwt_list.filter_map_s (fun dns_name ->
+                  if dns_name = q.q_name then (* we found a match, update stats and add to list *)
+                    Irmin_backend.inc_total_requests t.storage ~vm_name ~dns_name >>= fun () ->
+                    Irmin_backend.set_last_request_timestamp t.storage ~vm_name ~dns_name (Unix.time()) >>= fun () ->
+                    t.log (Printf.sprintf "Matching VM is %s with DNS name %s\n" vm_name (Dns.Name.to_string dns_name));
+                    Lwt.return (Some dns_name)
+                  else
+                    Lwt.return_none
+                ) dns_name_list >>= fun matching_dns_names ->
+              if (List.length matching_dns_names) > 0 then
+                Lwt.return (Some vm_name)
+              else
+                Lwt.return_none
+            ) vm_list >>= fun matching_vm_names ->
+          Lwt_list.filter_map_s (fun vm_name -> (* start VMs and return IPs *)
+              Irmin_backend.get_ip t.storage ~vm_name >>= fun r ->
+              match r with
+              | None -> Lwt.return_none (* no ip, no result to return *)
+              | Some ip ->
+                or_vm_backend_error "Unable to look up VM name" (Vm_backend.lookup_vm_by_name t.vm_backend) vm_name >>= fun vm ->
+                start_vm t vm >>= fun () ->
+                output_stats t [vm_name] >>= fun () ->
+                Lwt.return (Some ip)
+            ) matching_vm_names >>= fun list_of_ips ->
+          if (List.length list_of_ips) = 0 then begin
+            t.log (Printf.sprintf "No valid match for %s. Forwarding.\n" (Dns.Name.to_string q.q_name));
+            Dns_helpers.fallback t.forward_resolver q.q_class q.q_type q.q_name
+          end else 
+            (* TODO how to return results with multiple IPs - for now just return DNS answer *)
+            return (Some answer)
+        | _ ->
+          t.log (Printf.sprintf "No local match for %s, forwarding...\n"
+                   (Name.to_string q.q_name));
+          Dns_helpers.fallback t.forward_resolver q.q_class q.q_type q.q_name
+      end
+    | _ -> return_none
 
 end

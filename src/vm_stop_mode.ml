@@ -14,14 +14,23 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  *)
 
-module Make :
-  functor (Backend : Backends.VM_BACKEND) ->
-  sig
-    type t
+type t = Destroy | Suspend | Shutdown | Unknown
 
-    val create : Backend.t -> (string -> unit) -> string -> string -> t
-    val disconnect : t -> unit Lwt.t
-    val connect : t -> unit Lwt.t
-    val send : t -> Cstruct.t -> unit Lwt.t
-    val send_garp : t -> Macaddr.t -> Ipaddr.V4.t -> unit Lwt.t
-  end
+let of_string s =
+  if s = "destroy" then
+    Destroy
+  else
+  if s = "suspend" then
+    Suspend 
+  else
+  if s = "shutdown" then
+    Shutdown
+  else
+    Unknown
+
+let to_string = function
+  | Destroy -> "destroy"
+  | Suspend -> "suspend"
+  | Shutdown -> "shutdown"
+  | Unknown -> "unknown"
+

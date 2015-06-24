@@ -14,14 +14,29 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  *)
 
-module Make :
-  functor (Backend : Backends.VM_BACKEND) ->
-  sig
-    type t
 
-    val create : Backend.t -> (string -> unit) -> string -> string -> t
-    val disconnect : t -> unit Lwt.t
-    val connect : t -> unit Lwt.t
-    val send : t -> Cstruct.t -> unit Lwt.t
-    val send_garp : t -> Macaddr.t -> Ipaddr.V4.t -> unit Lwt.t
-  end
+type t = Suspended | Running | Paused | Off | Unknown
+
+(* convert vm state to string *)
+let to_string = function
+  | Unknown -> "unknown"
+  | Running -> "running"
+  | Paused -> "paused"
+  | Suspended -> "suspended"
+  | Off -> "off"
+
+(* convert string to vm state. *)
+let of_string s =
+  if s = "suspended" then
+    Suspended
+  else
+  if s = "running" then
+    Running
+  else
+  if s = "paused" then
+    Paused
+  else
+  if s = "off" then
+    Off
+  else
+    Unknown

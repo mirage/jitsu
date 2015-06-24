@@ -1,5 +1,6 @@
 PKG libvirt
 PKG lwt
+PKG dns
 PKG dns.lwt
 PKG cmdliner
 PKG ezxmlm
@@ -7,6 +8,7 @@ PKG ipaddr
 PKG cstruct
 PKG conduit
 PKG vchan
+PKG irmin
 
 EXT lwt
 

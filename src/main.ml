@@ -96,10 +96,10 @@ let vm_stop_mode =
      $(b,destroy) and $(b,shutdown). Suspended VMs are generally faster to \
      resume, but require resources to store state. Note that Mirage \
      suspend/resume is currently not supported on ARM." in
-  Arg.(value & opt (enum [("destroy" , Backends.VmStopDestroy);
-                          ("suspend" , Backends.VmStopSuspend);
-                          ("shutdown", Backends.VmStopShutdown)])
-         Backends.VmStopSuspend & info ["m" ; "mode" ] ~docv:"MODE" ~doc)
+  Arg.(value & opt (enum [("destroy" , Vm_stop_mode.Destroy);
+                          ("suspend" , Vm_stop_mode.Suspend);
+                          ("shutdown", Vm_stop_mode.Shutdown)])
+         Vm_stop_mode.Shutdown & info ["m" ; "mode" ] ~docv:"MODE" ~doc)
 
 let synjitsu_domain_uuid =
   let doc =
@@ -146,6 +146,11 @@ let jitsu backend connstr bindaddr bindport forwarder forwardport response_delay
       (module Libvirt_backend) 
   in
   let module Jitsu = Jitsu.Make(B) in
+  let map_domain = 
+    List.map (fun (dns_name, ip, vm_name) ->
+        ((Dns.Name.of_string dns_name), (Ipaddr.V4.of_string_exn ip), vm_name)
+      ) map_domain 
+  in
   let rec maintenance_thread t timeout =
     Lwt_unix.sleep timeout >>= fun () ->
     log ".";
@@ -170,14 +175,14 @@ let jitsu backend connstr bindaddr bindport forwarder forwardport response_delay
      match r with
      | `Error _ -> raise (Failure "Unable to connect to backend") 
      | `Ok backend_t ->
-       let t = or_abort (fun () -> Jitsu.create backend_t log forward_resolver ~use_synjitsu ()) in
+       or_abort (fun () -> Jitsu.create backend_t log forward_resolver ~use_synjitsu ()) >>= fun t ->
        Lwt.choose [(
            (* main thread, DNS server *)
-           let triple (dns,ip,name) =
-             log (Printf.sprintf "Adding domain '%s' for VM '%s' with ip %s\n" dns name ip);
-             or_abort (fun () -> Jitsu.add_vm t ~domain:dns ~name (Ipaddr.V4.of_string_exn ip) vm_stop_mode ~delay:response_delay ~ttl)
+           let add (dns_name,vm_ip,vm_name) =
+             log (Printf.sprintf "Adding domain '%s' for VM '%s' with ip %s\n" (Dns.Name.to_string dns_name) vm_name (Ipaddr.V4.to_string vm_ip));
+             or_abort (fun () -> Jitsu.add_vm t ~dns_names:[dns_name] ~vm_name ~vm_ip ~vm_stop_mode ~response_delay ~dns_ttl:ttl)
            in
-           Lwt_list.iter_p triple map_domain
+           Lwt_list.iter_p add map_domain
            >>= fun () ->
            log (Printf.sprintf "Starting server on %s:%d...\n" bindaddr bindport);
            let processor = ((Dns_server.processor_of_process (Jitsu.process t))

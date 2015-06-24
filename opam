@@ -1,17 +1,21 @@
 opam-version: "1.2"
 name: "jitsu"
 maintainer: "Magnus Skjegstad <magnus@skjegstad.com>"
+authors: "Magnus Skjegstad <magnus@skjegstad.com>"
 build: [
   [make]
 ]
 depends: [  "lwt" 
             "dns"  { >= "0.15.0" }
+            "irmin-unix"
             "cmdliner" 
             "libvirt" 
             "ipaddr"
             "ezxmlm" 
             "conduit"
-            "vchan" ]
+            "vchan"
+            "rpc"
+            "xen-api-client" ]
 depexts: [
   [["debian"] ["libvirt-bin" "libvirt-dev"]]
   [["ubuntu"] ["libvirt-bin" "libvirt-dev"]]
