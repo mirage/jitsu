@@ -95,26 +95,23 @@ module Make (Vm_backend : Backends.VM_BACKEND) = struct
       Irmin_backend.inc_total_starts t.storage ~vm_name
     in
     let notify_synjitsu () =
-      Irmin_backend.get_ip t.storage ~vm_name >>= fun r ->
-      match r with
-      | Some ip -> begin
+      match t.synjitsu with
+      | None -> Lwt.return_unit (* synjitsu not configured *)
+      | Some s -> begin
+          Irmin_backend.get_ip t.storage ~vm_name >>= fun r ->
           or_vm_backend_error "Unable to get MAC for VM" (Vm_backend.get_mac t.vm_backend) vm >>= fun vm_mac ->
-          match vm_mac with
-          | Some m -> begin
-              match t.synjitsu with
-              | Some s -> begin
-                  t.log (Printf.sprintf "Notifying Synjitsu of MAC %s\n" (Macaddr.to_string m));
-                  try_lwt 
-                    Synjitsu.send_garp s m ip
-                  with e -> 
-                    t.log (Printf.sprintf "Got exception %s\n" (Printexc.to_string e)); 
-                    Lwt.return_unit
-                end
-              | None -> Lwt.return_unit
+          match r, vm_mac with
+          | Some ip, Some m -> begin
+              t.log (Printf.sprintf "Notifying Synjitsu of MAC %s\n" (Macaddr.to_string m));
+              try_lwt
+                Synjitsu.send_garp s m ip
+              with e ->
+                t.log (Printf.sprintf "Got exception %s\n" (Printexc.to_string e));
+                Lwt.return_unit
             end
-          | None -> Lwt.return_unit
+          | _, None -> t.log (Printf.sprintf "VM %s has no MAC address. Synjitsu not notified." vm_name); Lwt.return_unit
+          | None, _ -> t.log (Printf.sprintf "VM %s has no IP. Synjitsu not notified." vm_name); Lwt.return_unit
         end
-      | None -> t.log (Printf.sprintf "VM %s has no IP. Synjitsu not notified." vm_name); Lwt.return_unit
     in
     match vm_state with
     | Vm_state.Running -> (* Already running, exit *)
