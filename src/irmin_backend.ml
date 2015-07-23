@@ -243,7 +243,7 @@ let create_dns_db t =
 let rec get_dns_db t =
   match t.dns_cache_dirty with
   | true -> create_dns_db t >>= fun new_db ->
-            t.dns_cache <- new_db;
-            t.dns_cache_dirty <- false;
-            get_dns_db t
+    t.dns_cache <- new_db;
+    t.dns_cache_dirty <- false;
+    get_dns_db t
   | false -> Lwt.return t.dns_cache

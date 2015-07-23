@@ -137,11 +137,11 @@ let backend =
 let jitsu backend connstr bindaddr bindport forwarder forwardport response_delay 
     map_domain ttl vm_stop_mode use_synjitsu =
   let (module B) = 
-      if backend = `Libvirt then 
-          (module Libvirt_backend : Backends.VM_BACKEND) 
-      else if backend = `Xapi then
-          (module Xapi_backend : Backends.VM_BACKEND) 
-      else
+    if backend = `Libvirt then 
+      (module Libvirt_backend : Backends.VM_BACKEND) 
+    else if backend = `Xapi then
+      (module Xapi_backend : Backends.VM_BACKEND) 
+    else
       (module Libvirt_backend) 
   in
   let module Jitsu = Jitsu.Make(B) in

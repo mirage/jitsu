@@ -37,38 +37,38 @@ let try_xapi msg f =
 
 let define_vm t ~name_label ~pV_kernel =
   try_xapi "Unable to define vm" (fun () -> 
-    let (rpc, session_id) = t.connection in
-    lwt vm = VM.create ~rpc ~session_id
-	  ~name_label ~name_description:"" ~user_version:0L
-	  ~is_a_template:false
-	  ~affinity:"OpaqueRef:NULL"
-	  ~memory_target:0L
-	  ~memory_static_max:268435456L ~memory_dynamic_max:268435456L
-	  ~memory_dynamic_min:134217728L ~memory_static_min:134217728L
-	  ~vCPUs_params:[] ~vCPUs_max:1L ~vCPUs_at_startup:1L
-	  ~actions_after_shutdown:`destroy ~actions_after_reboot:`restart ~actions_after_crash:`restart
-	  ~pV_bootloader:"" ~pV_kernel ~pV_ramdisk:"" ~pV_args:""
-	  ~pV_bootloader_args:"" ~pV_legacy_args:""
-	  ~hVM_boot_policy:"" ~hVM_boot_params:[] ~hVM_shadow_multiplier:1.0
-	  ~platform:[]
-	  ~pCI_bus:""
-	  ~other_config:[("vgpu_pci", ""); ("mac_seed", "c8b61c6d-8bc6-3365-ea27-507a3166bb33")] (* TODO: require seed? *)
-	  ~recommendations:""
-	  ~xenstore_data:[("vm-data", "")]
-	  ~ha_always_run:false ~ha_restart_priority:""
-	  ~tags:[]
-	  ~blocked_operations:[]
-	  ~protection_policy:"OpaqueRef:NULL"
-	  ~is_snapshot_from_vmpp:false
-	  ~appliance:"OpaqueRef:NULL"
-	  ~start_delay:0L ~shutdown_delay:0L ~order:0L ~suspend_SR:"OpaqueRef:NULL" ~version:0L in
-    lwt net = Network.get_by_name_label rpc session_id "Pool-wide network associated with eth0" in
-    lwt vif = VIF.create ~rpc:rpc ~session_id:session_id
-      ~device:"0" ~network:(List.hd net) ~vM:vm ~mAC:"" ~mTU:0L
-      ~other_config:[] ~qos_algorithm_type:"" ~qos_algorithm_params:[]  ~locking_mode:`network_default
-	  ~ipv4_allowed:[] ~ipv6_allowed:[] in
-    return (vm, vif)
-  )
+      let (rpc, session_id) = t.connection in
+      lwt vm = VM.create ~rpc ~session_id
+          ~name_label ~name_description:"" ~user_version:0L
+          ~is_a_template:false
+          ~affinity:"OpaqueRef:NULL"
+          ~memory_target:0L
+          ~memory_static_max:268435456L ~memory_dynamic_max:268435456L
+          ~memory_dynamic_min:134217728L ~memory_static_min:134217728L
+          ~vCPUs_params:[] ~vCPUs_max:1L ~vCPUs_at_startup:1L
+          ~actions_after_shutdown:`destroy ~actions_after_reboot:`restart ~actions_after_crash:`restart
+          ~pV_bootloader:"" ~pV_kernel ~pV_ramdisk:"" ~pV_args:""
+          ~pV_bootloader_args:"" ~pV_legacy_args:""
+          ~hVM_boot_policy:"" ~hVM_boot_params:[] ~hVM_shadow_multiplier:1.0
+          ~platform:[]
+          ~pCI_bus:""
+          ~other_config:[("vgpu_pci", ""); ("mac_seed", "c8b61c6d-8bc6-3365-ea27-507a3166bb33")] (* TODO: require seed? *)
+          ~recommendations:""
+          ~xenstore_data:[("vm-data", "")]
+          ~ha_always_run:false ~ha_restart_priority:""
+          ~tags:[]
+          ~blocked_operations:[]
+          ~protection_policy:"OpaqueRef:NULL"
+          ~is_snapshot_from_vmpp:false
+          ~appliance:"OpaqueRef:NULL"
+          ~start_delay:0L ~shutdown_delay:0L ~order:0L ~suspend_SR:"OpaqueRef:NULL" ~version:0L in
+      lwt net = Network.get_by_name_label rpc session_id "Pool-wide network associated with eth0" in
+      lwt vif = VIF.create ~rpc:rpc ~session_id:session_id
+          ~device:"0" ~network:(List.hd net) ~vM:vm ~mAC:"" ~mTU:0L
+          ~other_config:[] ~qos_algorithm_type:"" ~qos_algorithm_params:[]  ~locking_mode:`network_default
+          ~ipv4_allowed:[] ~ipv6_allowed:[] in
+      return (vm, vif)
+    )
 
 let connect connstr = 
   try_xapi "Unable to connect" (fun () -> 
@@ -92,105 +92,105 @@ let lookup_vm_by_uuid t vm_uuid =
   (* We use UUID for internal representation, but call lookup anyway to make sure it exists *)
   (* Xapi: multiple domain can share the same name TODO: *)
   try_xapi "Unable lookup VM UUID" (fun () ->
-    let (rpc, session_id) = t.connection in
-    lwt domains = VM.get_by_name_label ~rpc:rpc ~session_id:session_id ~label:vm_uuid in
-    lwt uuid = VM.get_uuid ~rpc:rpc ~session_id:session_id ~self:(List.hd domains) in
-    Lwt.return { uuid }
-  )
+      let (rpc, session_id) = t.connection in
+      lwt domains = VM.get_by_name_label ~rpc:rpc ~session_id:session_id ~label:vm_uuid in
+      lwt uuid = VM.get_uuid ~rpc:rpc ~session_id:session_id ~self:(List.hd domains) in
+      Lwt.return { uuid }
+    )
 
 let lookup_vm_by_name t vm_name =
   (* Xapi: multiple domain can share the same name TODO: *)
   try_xapi "Unable lookup VM name" (fun () -> 
-    let (rpc, session_id) = t.connection in
-    lwt domains = VM.get_by_name_label ~rpc:rpc ~session_id:session_id ~label:vm_name in
-    lwt uuid = VM.get_uuid ~rpc:rpc ~session_id:session_id ~self:(List.hd domains) in
-    Lwt.return { uuid }
-  )
+      let (rpc, session_id) = t.connection in
+      lwt domains = VM.get_by_name_label ~rpc:rpc ~session_id:session_id ~label:vm_name in
+      lwt uuid = VM.get_uuid ~rpc:rpc ~session_id:session_id ~self:(List.hd domains) in
+      Lwt.return { uuid }
+    )
 
 let get_state t vm =
   try_xapi "Unable to get VM state" (fun () -> 
-    let (rpc, session_id) = t.connection in
-    lwt domain = VM.get_by_uuid ~rpc:rpc ~session_id:session_id ~uuid:vm.uuid in
-    lwt state = VM.get_power_state ~rpc:rpc ~session_id:session_id ~self:domain in
-    Lwt.return (xapi_state_to_vm_state state)
-  )
+      let (rpc, session_id) = t.connection in
+      lwt domain = VM.get_by_uuid ~rpc:rpc ~session_id:session_id ~uuid:vm.uuid in
+      lwt state = VM.get_power_state ~rpc:rpc ~session_id:session_id ~self:domain in
+      Lwt.return (xapi_state_to_vm_state state)
+    )
 
 let destroy_vm t vm =
   try_xapi "Unable to destroy VM" (fun () -> 
-    let (rpc, session_id) = t.connection in
-    lwt domain = VM.get_by_uuid ~rpc:rpc ~session_id:session_id ~uuid:vm.uuid in
-    VM.destroy ~rpc:rpc ~session_id:session_id ~self:domain
-  )
+      let (rpc, session_id) = t.connection in
+      lwt domain = VM.get_by_uuid ~rpc:rpc ~session_id:session_id ~uuid:vm.uuid in
+      VM.destroy ~rpc:rpc ~session_id:session_id ~self:domain
+    )
 
 let shutdown_vm t vm =
   try_xapi "Unable to shutdown VM" (fun () -> 
-    let (rpc, session_id) = t.connection in
-    lwt domain = VM.get_by_uuid ~rpc:rpc ~session_id:session_id ~uuid:vm.uuid in
-    VM.hard_shutdown ~rpc:rpc ~session_id:session_id ~vm:domain
-  )
+      let (rpc, session_id) = t.connection in
+      lwt domain = VM.get_by_uuid ~rpc:rpc ~session_id:session_id ~uuid:vm.uuid in
+      VM.hard_shutdown ~rpc:rpc ~session_id:session_id ~vm:domain
+    )
 
 let suspend_vm t vm =
   try_xapi "Unable to suspend VM" (fun () -> 
-    let (rpc, session_id) = t.connection in
-    lwt domain = VM.get_by_uuid ~rpc:rpc ~session_id:session_id ~uuid:vm.uuid in
-    VM.suspend ~rpc:rpc ~session_id:session_id ~vm:domain
-  )
+      let (rpc, session_id) = t.connection in
+      lwt domain = VM.get_by_uuid ~rpc:rpc ~session_id:session_id ~uuid:vm.uuid in
+      VM.suspend ~rpc:rpc ~session_id:session_id ~vm:domain
+    )
 
 let pause_vm t vm =
   try_xapi "Unable to suspend VM" (fun () -> 
-    let (rpc, session_id) = t.connection in
-    lwt domain = VM.get_by_uuid ~rpc:rpc ~session_id:session_id ~uuid:vm.uuid in
-    VM.pause ~rpc:rpc ~session_id:session_id ~vm:domain
-  )
+      let (rpc, session_id) = t.connection in
+      lwt domain = VM.get_by_uuid ~rpc:rpc ~session_id:session_id ~uuid:vm.uuid in
+      VM.pause ~rpc:rpc ~session_id:session_id ~vm:domain
+    )
 
 let unpause_vm t vm = (* from pause state *)
   try_xapi "Unable to resume VM" (fun () -> 
-    let (rpc, session_id) = t.connection in
-    lwt domain = VM.get_by_uuid ~rpc:rpc ~session_id:session_id ~uuid:vm.uuid in
-    VM.unpause ~rpc:rpc ~session_id:session_id ~vm:domain
-  )
+      let (rpc, session_id) = t.connection in
+      lwt domain = VM.get_by_uuid ~rpc:rpc ~session_id:session_id ~uuid:vm.uuid in
+      VM.unpause ~rpc:rpc ~session_id:session_id ~vm:domain
+    )
 
 let resume_vm t vm = (* from suspended state *)
   try_xapi "Unable to unsuspend VM" (fun () -> 
-    let (rpc, session_id) = t.connection in
-    lwt domain = VM.get_by_uuid ~rpc:rpc ~session_id:session_id ~uuid:vm.uuid in
-    VM.resume ~rpc:rpc ~session_id:session_id ~vm:domain ~start_paused:false ~force:true
-  )
+      let (rpc, session_id) = t.connection in
+      lwt domain = VM.get_by_uuid ~rpc:rpc ~session_id:session_id ~uuid:vm.uuid in
+      VM.resume ~rpc:rpc ~session_id:session_id ~vm:domain ~start_paused:false ~force:true
+    )
 
 let start_vm t vm =
   try_xapi "Unable to start VM" (fun () -> 
-    let (rpc, session_id) = t.connection in
-    lwt domain = VM.get_by_uuid ~rpc:rpc ~session_id:session_id ~uuid:vm.uuid in
-    VM.start ~rpc:rpc ~session_id:session_id ~vm:domain ~start_paused:false ~force:true
-  )
+      let (rpc, session_id) = t.connection in
+      lwt domain = VM.get_by_uuid ~rpc:rpc ~session_id:session_id ~uuid:vm.uuid in
+      VM.start ~rpc:rpc ~session_id:session_id ~vm:domain ~start_paused:false ~force:true
+    )
 
 (* get mac address for domain - TODO only supports one interface *)
 
 let get_mac t vm =
   try_xapi "Unable to get MAC address for VM" (fun () ->
-    let (rpc, session_id) = t.connection in
-    lwt domain = VM.get_by_uuid ~rpc:rpc ~session_id:session_id ~uuid:vm.uuid in
-    lwt all_vifs = VM.get_VIFs ~rpc:rpc ~session_id:session_id ~self:domain in
-    let vif = List.hd all_vifs in (* TODO only supports one interface *)
-    lwt mac = VIF.get_MAC ~rpc:rpc ~session_id:session_id ~self:vif in
-    Lwt.return (Macaddr.of_string mac)
-  )
+      let (rpc, session_id) = t.connection in
+      lwt domain = VM.get_by_uuid ~rpc:rpc ~session_id:session_id ~uuid:vm.uuid in
+      lwt all_vifs = VM.get_VIFs ~rpc:rpc ~session_id:session_id ~self:domain in
+      let vif = List.hd all_vifs in (* TODO only supports one interface *)
+      lwt mac = VIF.get_MAC ~rpc:rpc ~session_id:session_id ~self:vif in
+      Lwt.return (Macaddr.of_string mac)
+    )
 
 let get_uuid _ vm =
   Lwt.return (`Ok vm.uuid)
 
 let get_name t vm =
   try_xapi "Unable to get VM name" (fun () ->
-    let (rpc, session_id) = t.connection in
-    lwt domain = VM.get_by_uuid ~rpc:rpc ~session_id:session_id ~uuid:vm.uuid in
-    VM.get_name_label ~rpc:rpc ~session_id:session_id ~self:domain
-  )
+      let (rpc, session_id) = t.connection in
+      lwt domain = VM.get_by_uuid ~rpc:rpc ~session_id:session_id ~uuid:vm.uuid in
+      VM.get_name_label ~rpc:rpc ~session_id:session_id ~self:domain
+    )
 
 let get_domain_id t vm =
   try_xapi "Unable to get VM dom id" (fun () ->
-    let (rpc, session_id) = t.connection in
-    lwt domain = VM.get_by_uuid ~rpc:rpc ~session_id:session_id ~uuid:vm.uuid in
-    lwt id = VM.get_domid ~rpc:rpc ~session_id:session_id ~self:domain in
-    Lwt.return (Int64.to_int id)
-  )
+      let (rpc, session_id) = t.connection in
+      lwt domain = VM.get_by_uuid ~rpc:rpc ~session_id:session_id ~uuid:vm.uuid in
+      lwt id = VM.get_domid ~rpc:rpc ~session_id:session_id ~self:domain in
+      Lwt.return (Int64.to_int id)
+    )
 
