@@ -241,7 +241,7 @@ module Make (Vm_backend : Backends.VM_BACKEND) = struct
   (** Process function for ocaml-dns. Starts new VMs from DNS queries or
       forwards request to a fallback resolver *)
   let process t ~src:_ ~dst:_ packet =
-    Dns_helpers.create_dns_db t.storage >>= fun dns_db ->
+    Irmin_backend.get_dns_db t.storage >>= fun dns_db ->
     let open Packet in
     match packet.questions with
     | [] -> return_none;

@@ -51,33 +51,3 @@ let fallback forwarder _class _type _name =
     Lwt.return (Some (Dns.Query.answer_of_response result))
   | None -> Lwt.return_none
 
-let create_dns_db t =
-  let dns_db = Dns.Loader.new_db () in
-  Irmin_backend.get_vm_list t >>= fun vm_list ->
-  Lwt_list.iter_s (fun vm_name ->
-      Printf.printf "found vm %s" vm_name;
-      Irmin_backend.get_ip t ~vm_name >>= fun r ->
-      match r with
-      | None -> Printf.printf "VM %s has no IP, skipping" vm_name; Lwt.return_unit
-      | Some ip ->
-        Irmin_backend.get_vm_dns_name_list t ~vm_name >>= fun dns_name_list ->
-        Lwt_list.iter_s (fun dns_name ->
-            let base_domain = get_base_domain dns_name in
-            let answer = has_local_domain dns_db base_domain Packet.Q_SOA in
-            Irmin_backend.get_ttl t ~vm_name ~dns_name >>= fun ttl ->
-            if not answer then (
-              Printf.printf "Adding SOA '%s' with ttl=%d\n" (Name.to_string base_domain) ttl;
-              (* add soa if not registered before *) (* TODO use same ttl? *)
-              add_soa dns_db base_domain ttl;
-            );
-            (* add dns record *)
-            Printf.printf "Adding A PTR for '%s' with ttl=%d and ip=%s\n" (Name.to_string dns_name) ttl (Ipaddr.V4.to_string ip);
-            Loader.add_a_rr ip (Int32.of_int ttl) dns_name dns_db;
-            Lwt.return_unit
-          ) dns_name_list 
-        >>= fun () ->
-        Lwt.return_unit
-    )
-    vm_list >>= fun () ->
-  Lwt.return dns_db
-

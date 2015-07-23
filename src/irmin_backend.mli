@@ -19,6 +19,9 @@ type id
 
 val create : ?persist:bool -> ?root:string -> ?log:(string -> unit) -> unit -> t Lwt.t 
 
+val get_dns_db : t -> Dns.Loader.db Lwt.t
+(** Get DNS DB representation for use with ocaml-dns *)
+
 val add_vm_dns : t -> vm_name:string -> dns_name:Dns.Name.t -> dns_ttl:int -> unit Lwt.t
 (** Add DNS record for VM *)
 
