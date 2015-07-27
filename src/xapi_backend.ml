@@ -63,7 +63,7 @@ let define_vm t ~name_label ~pV_kernel =
           ~is_snapshot_from_vmpp:false
           ~appliance:"OpaqueRef:NULL"
           ~start_delay:0L ~shutdown_delay:0L ~order:0L ~suspend_SR:"OpaqueRef:NULL" ~version:0L in
-      lwt net = Network.get_by_name_label rpc session_id "Pool-wide network associated with eth0" in
+      lwt net = Network.get_by_name_label ~rpc ~session_id ~label:"Pool-wide network associated with eth0" in
       lwt vif = VIF.create ~rpc:rpc ~session_id:session_id
           ~device:"0" ~network:(List.hd net) ~vM:vm ~mAC:"" ~mTU:0L
           ~other_config:[] ~qos_algorithm_type:"" ~qos_algorithm_params:[]  ~locking_mode:`network_default
@@ -83,7 +83,7 @@ let connect ?log_f:(log_f=default_log) ?connstr () =
       let user = match Uri.user uri with | Some u -> u | None -> "root" in
       let pass = match Uri.host uri with | Some h -> h | None -> "" in
       let rpc = if !json then make_json host else make host in
-      lwt session_id = Session.login_with_password rpc user pass "1.0" in
+      lwt session_id = Session.login_with_password ~rpc ~uname:user ~pwd:pass ~version:"1.0" in
       Lwt.return { connection = (rpc, session_id) ; log_f }
     )
 
@@ -163,7 +163,7 @@ let resume_vm t vm = (* from suspended state *)
       VM.resume ~rpc:rpc ~session_id:session_id ~vm:domain ~start_paused:false ~force:true
     )
 
-let start_vm t vm config =
+let start_vm t vm _ =
   try_xapi "Unable to start VM" (fun () ->
       let (rpc, session_id) = t.connection in
       lwt domain = VM.get_by_uuid ~rpc:rpc ~session_id:session_id ~uuid:vm.uuid in
