@@ -1,8 +1,8 @@
-PACKAGES=-package lwt.syntax,lwt,dns.lwt,libvirt,cmdliner,ezxmlm,ipaddr,str,conduit,conduit.lwt-unix,xen-api-client,xen-api-client.lwt,irmin.unix
+PACKAGES=-package lwt.syntax,lwt,dns.lwt,libvirt,cmdliner,ezxmlm,ipaddr,str,conduit,conduit.lwt-unix,xen-api-client,xen-api-client.lwt,irmin.unix,xenstore,xenstore_transport,xenstore_transport.lwt,uuidm,xenlight,xenlight.xentoollog
 INCLUDE=
 OPT=-linkpkg -g 
 OCAMLOPT=ocamlopt -w A-4-44
-FILES=vm_stop_mode.ml vm_state.ml backends.mli libvirt_backend.ml xapi_backend.ml irmin_backend.mli dns_helpers.ml irmin_backend.ml synjitsu.mli synjitsu.ml jitsu.mli jitsu.ml main.ml
+FILES=vm_stop_mode.ml vm_state.ml backends.mli libvirt_backend.ml xapi_backend.ml libxl_backend.ml irmin_backend.mli dns_helpers.ml irmin_backend.ml synjitsu.mli synjitsu.ml jitsu.mli jitsu.ml main.ml
 PWD=$(shell pwd)
 SRC=$(PWD)/src
 BIN=$(PWD)/bin

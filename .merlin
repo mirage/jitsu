@@ -9,6 +9,11 @@ PKG cstruct
 PKG conduit
 PKG vchan
 PKG irmin
+PKG xenstore
+PKG xenstore_transport
+PKG xenlight
+PKG uuidm
+PKG xen-api-client
 
 EXT lwt
 

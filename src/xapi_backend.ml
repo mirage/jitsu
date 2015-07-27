@@ -21,6 +21,7 @@ let json = ref false
 
 type t = {
   connection : (Rpc.call -> Rpc.response Lwt.t) * string; (* Xapi connection *)
+  log_f : (string -> unit);
 }
 
 type vm = {
@@ -70,15 +71,20 @@ let define_vm t ~name_label ~pV_kernel =
       return (vm, vif)
     )
 
-let connect connstr = 
-  try_xapi "Unable to connect" (fun () -> 
-      let uri  = Uri.of_string connstr in
+
+let default_log s =
+  Printf.printf "xapi_backend: %s\n" s
+
+let connect ?log_f:(log_f=default_log) ?connstr () = 
+  match connstr with
+  | None -> Lwt.return (`Error (`Unable_to_connect "Empty connect string"))
+  | Some uri -> try_xapi "Unable to connect" (fun () -> 
       let host = match Uri.host uri with | Some h -> h | None -> "127.0.0.1" in
       let user = match Uri.user uri with | Some u -> u | None -> "root" in
       let pass = match Uri.host uri with | Some h -> h | None -> "" in
       let rpc = if !json then make_json host else make host in
       lwt session_id = Session.login_with_password rpc user pass "1.0" in
-      Lwt.return { connection = (rpc, session_id) }
+      Lwt.return { connection = (rpc, session_id) ; log_f }
     )
 
 (* convert vm state to string *)
@@ -93,7 +99,7 @@ let lookup_vm_by_uuid t vm_uuid =
   (* Xapi: multiple domain can share the same name TODO: *)
   try_xapi "Unable lookup VM UUID" (fun () ->
       let (rpc, session_id) = t.connection in
-      lwt domains = VM.get_by_name_label ~rpc:rpc ~session_id:session_id ~label:vm_uuid in
+      lwt domains = VM.get_by_name_label ~rpc:rpc ~session_id:session_id ~label:(Uuidm.to_string vm_uuid) in
       lwt uuid = VM.get_uuid ~rpc:rpc ~session_id:session_id ~self:(List.hd domains) in
       Lwt.return { uuid }
     )
@@ -157,7 +163,7 @@ let resume_vm t vm = (* from suspended state *)
       VM.resume ~rpc:rpc ~session_id:session_id ~vm:domain ~start_paused:false ~force:true
     )
 
-let start_vm t vm =
+let start_vm t vm config =
   try_xapi "Unable to start VM" (fun () -> 
       let (rpc, session_id) = t.connection in
       lwt domain = VM.get_by_uuid ~rpc:rpc ~session_id:session_id ~uuid:vm.uuid in
@@ -165,7 +171,6 @@ let start_vm t vm =
     )
 
 (* get mac address for domain - TODO only supports one interface *)
-
 let get_mac t vm =
   try_xapi "Unable to get MAC address for VM" (fun () ->
       let (rpc, session_id) = t.connection in
@@ -173,11 +178,15 @@ let get_mac t vm =
       lwt all_vifs = VM.get_VIFs ~rpc:rpc ~session_id:session_id ~self:domain in
       let vif = List.hd all_vifs in (* TODO only supports one interface *)
       lwt mac = VIF.get_MAC ~rpc:rpc ~session_id:session_id ~self:vif in
-      Lwt.return (Macaddr.of_string mac)
+      match (Macaddr.of_string mac) with
+      | None -> Lwt.return []
+      | Some mac -> Lwt.return [mac]
     )
 
 let get_uuid _ vm =
-  Lwt.return (`Ok vm.uuid)
+  match (Uuidm.of_string vm.uuid) with
+  | None -> Lwt.return (`Error (`Unknown (Printf.sprintf "Unable to parse UUID %s" vm.uuid)))
+  | Some u -> Lwt.return (`Ok u)
 
 let get_name t vm =
   try_xapi "Unable to get VM name" (fun () ->
@@ -194,3 +203,5 @@ let get_domain_id t vm =
       Lwt.return (Int64.to_int id)
     )
 
+let get_config_option_list = 
+  []

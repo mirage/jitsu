@@ -78,10 +78,9 @@ let response_delay =
 
 let map_domain =
   let doc =
-    "Maps DOMAIN to a VM and IP. VM must match a VM available through libvirt \
-     (see virsh list --all)." in
-  Arg.(non_empty & pos_all (t3 ~sep:',' string string string) [] & info []
-         ~docv:"DOMAIN,IP,VM" ~doc)
+    "Maps domain, ip, kernel and memory in KiB. Expects keys and values in the form key=val. Valid options vary with backend." in
+  Arg.(non_empty & pos_all (array ~sep:',' (t2 ~sep:'=' string string)) [] & info []
+         ~docv:"domain=...,ip=...,kernel=...,mem=...,nics=" ~doc)
 
 let ttl =
   let doc =
@@ -130,6 +129,7 @@ let backend =
   let doc =
     "Which backend to use. Currently libvirt and xapi (experimental) is supported." in
   Arg.(value & opt (enum [("libvirt" , `Libvirt);
+                          ("libxl", `Libxl);
                           ("xapi", `Xapi)])
          `Libvirt & info ["x" ; "backend" ] ~docv:"BACKEND" ~doc)
 
@@ -141,15 +141,17 @@ let jitsu backend connstr bindaddr bindport forwarder forwardport response_delay
       (module Libvirt_backend : Backends.VM_BACKEND) 
     else if backend = `Xapi then
       (module Xapi_backend : Backends.VM_BACKEND) 
+    else if backend = `Libxl then
+      (module Libxl_backend : Backends.VM_BACKEND) 
     else
       (module Libvirt_backend) 
   in
   let module Jitsu = Jitsu.Make(B) in
-  let map_domain = 
+  (*let map_domain = 
     List.map (fun (dns_name, ip, vm_name) ->
         ((Dns.Name.of_string dns_name), (Ipaddr.V4.of_string_exn ip), vm_name)
       ) map_domain 
-  in
+    in*)
   let rec maintenance_thread t timeout =
     Lwt_unix.sleep timeout >>= fun () ->
     log ".";
@@ -169,19 +171,31 @@ let jitsu backend connstr bindaddr bindport forwarder forwardport response_delay
       )
      >>= fun forward_resolver ->
      log (Printf.sprintf "Connecting to %s...\n" connstr);
-     B.connect connstr
-     >>= fun r ->
+     let connstr = Uri.of_string connstr in
+     B.connect ~connstr () >>= fun r ->
      match r with
      | `Error _ -> raise (Failure "Unable to connect to backend") 
      | `Ok backend_t ->
        or_abort (fun () -> Jitsu.create backend_t log forward_resolver ~use_synjitsu ()) >>= fun t ->
        Lwt.choose [(
            (* main thread, DNS server *)
-           let add (dns_name,vm_ip,vm_name) =
+           let add_with_config config_array = (
+             let vm_config = (Hashtbl.create (Array.length config_array)) in
+             (Array.iter (fun (k,v) -> Hashtbl.replace vm_config k v) config_array);
+             let get k = 
+               (Printf.printf "%s=" k;
+                try
+                  let v = (Hashtbl.find vm_config k) in
+                  Printf.printf "%s\n" v; v 
+                with Not_found -> log (Printf.sprintf "Missing command line key: %s\n" k); raise Not_found)
+             in 
+             let dns_name = Dns.Name.of_string (get "dns") in
+             let vm_name = get "name" in
+             let vm_ip = Ipaddr.V4.of_string_exn (get "ip") in
              log (Printf.sprintf "Adding domain '%s' for VM '%s' with ip %s\n" (Dns.Name.to_string dns_name) vm_name (Ipaddr.V4.to_string vm_ip));
-             or_abort (fun () -> Jitsu.add_vm t ~dns_names:[dns_name] ~vm_name ~vm_ip ~vm_stop_mode ~response_delay ~dns_ttl:ttl)
-           in
-           Lwt_list.iter_p add map_domain
+             or_abort (fun () -> Jitsu.add_vm t ~dns_names:[dns_name] ~vm_name ~vm_ip ~vm_stop_mode ~response_delay ~dns_ttl:ttl ~vm_config)
+           ) in
+           Lwt_list.iter_p add_with_config map_domain
            >>= fun () ->
            log (Printf.sprintf "Starting server on %s:%d...\n" bindaddr bindport);
            let processor = ((Dns_server.processor_of_process (Jitsu.process t))

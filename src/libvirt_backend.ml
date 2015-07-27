@@ -16,6 +16,7 @@
 
 type t = {
   connection : Libvirt.rw Libvirt.Connect.t; (* Libvirt connection *)
+  log_f : string -> unit;
 }
 
 type vm = {
@@ -29,9 +30,14 @@ let try_libvirt msg f =
   with
   | Libvirt.Virterror e -> Lwt.return (`Error (`Unknown (Printf.sprintf "%s: %s" msg (Libvirt.Virterror.to_string e))))
 
-let connect connstr = 
-  try_libvirt "Unable to connect" (fun () -> 
-      { connection = Libvirt.Connect.connect ~name:connstr () }
+let default_log s =
+  Printf.printf "libvirt_backend: %s\n" s
+
+let connect ?log_f:(log_f=default_log) ?connstr () = 
+  match connstr with
+  | None -> Lwt.return (`Error (`Unable_to_connect "Empty connect string"))
+  | Some s -> try_libvirt "Unable to connect" (fun () -> 
+      { connection = Libvirt.Connect.connect ~name:(Uri.to_string s) () ; log_f }
     )
 
 (* convert vm state to string *)
@@ -47,7 +53,7 @@ let libvirt_state_to_vm_state = function
 let lookup_vm_by_uuid t vm_uuid =
   (* We use UUID for internal representation, but call lookup anyway to make sure it exists *)
   try_libvirt "Unable lookup VM UUID" (fun () -> 
-      let domain = Libvirt.Domain.lookup_by_uuid t.connection vm_uuid in
+      let domain = Libvirt.Domain.lookup_by_uuid t.connection (Uuidm.to_string vm_uuid) in
       let uuid = Libvirt.Domain.get_uuid domain in
       { uuid }
     )
@@ -96,7 +102,7 @@ let unpause_vm t vm =
 let pause_vm t vm =
   suspend_vm t vm (* suspend/pause is the same in libvirt *)
 
-let start_vm t vm =
+let start_vm t vm _ =
   try_libvirt "Unable to start VM" (fun () -> 
       let domain = Libvirt.Domain.lookup_by_uuid t.connection vm.uuid in
       Libvirt.Domain.create domain
@@ -111,14 +117,18 @@ let get_mac t vm =
         let (_, dom_xml) = Ezxmlm.from_string dom_xml_s in
         let (mac_attr, _) = Ezxmlm.member "domain" dom_xml |> Ezxmlm.member "devices" |> Ezxmlm.member "interface" |> Ezxmlm.member_with_attr "mac" in
         let mac_s = Ezxmlm.get_attr "address" mac_attr in
-        Macaddr.of_string mac_s
+        match (Macaddr.of_string mac_s) with
+        | None -> []
+        | Some mac -> [mac]
       with
-      | Not_found -> None
-      | Ezxmlm.Tag_not_found _ -> None
+      | Not_found -> []
+      | Ezxmlm.Tag_not_found _ -> []
     )
 
 let get_uuid _ vm =
-  Lwt.return (`Ok vm.uuid)
+  match (Uuidm.of_string vm.uuid) with
+  | None -> Lwt.return (`Error (`Unknown (Printf.sprintf "Unable to parse UUID %s" vm.uuid)))
+  | Some u -> Lwt.return (`Ok u)
 
 let get_name t vm =
   try_libvirt "Unable to get VM name" (fun () ->
@@ -132,3 +142,5 @@ let get_domain_id t vm =
       Libvirt.Domain.get_id domain
     )
 
+let get_config_option_list = 
+  []

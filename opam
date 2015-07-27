@@ -14,8 +14,10 @@ depends: [  "lwt"
             "ezxmlm" 
             "conduit"
             "vchan"
+            "uuidm"
             "irmin_unix" { >= "0.9.7" }
-            "xen-api-client" ]
+            "xen-api-client" 
+            "xenctrl" ]
 depexts: [
   [["debian"] ["libvirt-bin" "libvirt-dev"]]
   [["ubuntu"] ["libvirt-bin" "libvirt-dev"]]

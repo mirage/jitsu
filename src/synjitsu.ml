@@ -32,8 +32,11 @@ module Make (Backend : Backends.VM_BACKEND) = struct
     fn t >>= function
     | `Error e -> begin
         match e with 
+        | `Invalid_config s -> raise (Failure (Printf.sprintf "%s: %s" msg s))
         | `Not_found -> raise (Failure (Printf.sprintf "%s: Not found" msg))
-        | `Disconnected -> raise (Failure (Printf.sprintf "%s: Disconnected" msg))
+        | `Not_supported -> raise (Failure (Printf.sprintf "%s: Not supported" msg))
+        | `Disconnected s -> raise (Failure (Printf.sprintf "%s: %s" msg s))
+        | `Unable_to_connect s -> raise (Failure (Printf.sprintf "%s: %s" msg s))
         | `Unknown s -> raise (Failure (Printf.sprintf "%s: %s" msg s))
       end
     | `Ok t -> return t
@@ -65,7 +68,10 @@ module Make (Backend : Backends.VM_BACKEND) = struct
           (try_lwt (disconnect t) with _ -> Lwt.return_unit) >>= fun () -> (* disconnect just in case, ignore result *)
           Lwt_unix.sleep 1.0 >>= fun () -> (* wait, just in case *)
           t.log "synjitsu: Connecting...\n";
-          or_error "synjitsu: Could not find synjitsu VM by uuid" (Backend.lookup_vm_by_uuid t.backend) t.vm_uuid >>= fun vm_domain ->
+          (match (Uuidm.of_string t.vm_uuid) with
+           | Some uuid -> or_error "synjitsu: Could not find synjitsu VM by uuid" (Backend.lookup_vm_by_uuid t.backend) uuid
+           | None -> or_error "synjitsu: Could not find synjitsu VM by name" (Backend.lookup_vm_by_name t.backend) t.vm_uuid)
+          >>= fun vm_domain ->
           or_error "synjitsu: Unable to find synjitsu VM dom id for vchan connection" (Backend.get_domain_id t.backend) vm_domain >>= fun domid ->
           let client = `Vchan_direct (`Domid domid, `Port t.vchan_port) in
           Conduit_lwt_unix.init () >>= fun ctx ->

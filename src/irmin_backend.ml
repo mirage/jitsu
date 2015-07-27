@@ -24,6 +24,8 @@ open Irmin_unix
  *                  \-[dns_name]
  *                      \-ttl
  *                      (+ other stats)
+ *              \-config
+ *                  \ ...
  *              \-stop_mode
  *              \-response_delay (+ other stats)
  *              \-ip
@@ -72,16 +74,22 @@ let add_vm_dns t ~vm_name ~dns_name ~dns_ttl =
   t.dns_cache_dirty <- true; 
   Lwt.return_unit 
 
-let add_vm t ~vm_name ~vm_mac ~vm_ip ~vm_stop_mode ~response_delay =
+let add_vm t ~vm_name ~vm_mac ~vm_ip ~vm_stop_mode ~response_delay ~vm_config =
   let it = t.connection in
   let path = [ "jitsu" ; "vm" ; vm_name ] in
   Irmin.update (it "Registering VM stop mode")       (path @ [ "stop_mode" ]) (Vm_stop_mode.to_string vm_stop_mode) >>= fun () ->
   Irmin.update (it "Registering VM response delay")  (path @ [ "response_delay" ]) (string_of_float response_delay) >>= fun () ->
   Irmin.update (it "Registering VM IP")              (path @ [ "ip" ]) (Ipaddr.V4.to_string vm_ip) >>= fun () ->
+  let path = path @ [ "config" ] in
+  let config = Hashtbl.fold (fun k v l -> 
+      l @ [(k,v)]) vm_config [] in (* fold hashtbl to list *)
+  Lwt_list.iter_s (fun (k,v) ->  (* add config to irmin db *)
+      Irmin.update (it (Printf.sprintf "Registering extra config value %s" k)) (path @ [ k ]) v) config >>= fun () ->
   t.dns_cache_dirty <- true;
-  (match vm_mac with
-   | None -> Lwt.return_unit
-   | Some mac -> Irmin.update (it "Registering MAC address")     (path @ [ "mac" ]) (Macaddr.to_string mac) )
+  let macs = List.map (fun v -> Macaddr.to_string v) vm_mac in
+  (match macs with
+   | [] -> Lwt.return_unit
+   | _ :: _ -> Irmin.update (it "Registering MAC address") (path @ [ "mac" ]) (String.concat "," macs) )
 
 let get_stop_mode t ~vm_name =
   let it = t.connection in
@@ -198,6 +206,18 @@ let get_key_names t path =
       | None -> Lwt.return None
       | Some (_,key) -> Lwt.return (Some key)
     ) key_list
+
+let get_vm_config t ~vm_name =
+  let it = t.connection in
+  let path = [ "jitsu" ; "vm" ; vm_name ; "config" ] in
+  get_key_names t path >>= fun config_keys ->
+  let h = Hashtbl.create (List.length config_keys) in
+  Lwt_list.iter_s (fun k ->
+      Irmin.read (it (Printf.sprintf "Read config value %s" k)) (path @ [ k ]) >>= fun r ->
+      match r with
+      | None -> Lwt.return_unit
+      | Some s -> Lwt.return (Hashtbl.replace h k s)) config_keys >>= fun () ->
+  Lwt.return h
 
 let get_vm_list t =
   let path = [ "jitsu" ; "vm" ] in

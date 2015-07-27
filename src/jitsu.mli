@@ -43,8 +43,9 @@ module Make :
       vm_name:string -> vm_ip:Ipaddr.V4.t -> vm_stop_mode:Vm_stop_mode.t ->
       dns_names:(Dns.Name.t list) -> dns_ttl:int -> 
       response_delay:float -> 
+      vm_config:(string, string) Hashtbl.t ->
       unit Lwt.t
-    (** [add_vm t vm_name vm_stop_mode dns_name dns_ip dns_ttl response_delay] adds a VM to be
+    (** [add_vm t vm_name vm_stop_mode dns_name dns_ip dns_ttl response_delay vm_config] adds a VM to be
         monitored by jitsu.  FIXME. *)
 
     val stop_expired_vms: t -> unit Lwt.t

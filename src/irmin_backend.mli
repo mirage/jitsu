@@ -25,8 +25,11 @@ val get_dns_db : t -> Dns.Loader.db Lwt.t
 val add_vm_dns : t -> vm_name:string -> dns_name:Dns.Name.t -> dns_ttl:int -> unit Lwt.t
 (** Add DNS record for VM *)
 
-val add_vm : t -> vm_name:string -> vm_mac:Macaddr.t option -> vm_ip:Ipaddr.V4.t -> vm_stop_mode:Vm_stop_mode.t -> response_delay:float -> unit Lwt.t
+val add_vm : t -> vm_name:string -> vm_mac:Macaddr.t list -> vm_ip:Ipaddr.V4.t -> vm_stop_mode:Vm_stop_mode.t -> response_delay:float -> vm_config:(string,string) Hashtbl.t -> unit Lwt.t
 (** Add a new VM *)
+
+val get_vm_config : t -> vm_name:string -> (string, string) Hashtbl.t Lwt.t
+(** Additional configuration passed to the VM backend *)
 
 val get_stop_mode : t -> vm_name:string -> Vm_stop_mode.t Lwt.t
 (** Get VM stop mode *)

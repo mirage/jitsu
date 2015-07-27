@@ -48,15 +48,18 @@ module Make (Vm_backend : Backends.VM_BACKEND) = struct
       synjitsu ;
     }
 
+  let string_of_error e =
+    match e with 
+    | `Invalid_config s -> (Printf.sprintf "Invalid config: %s" s)
+    | `Not_found -> "Not found"
+    | `Not_supported -> "Not supported"
+    | `Disconnected s -> (Printf.sprintf "Disconnected: %s" s)
+    | `Unable_to_connect s -> (Printf.sprintf "Unable to connect: %s" s)
+    | `Unknown s -> (Printf.sprintf "%s" s)
 
   let or_vm_backend_error msg fn t =
     fn t >>= function
-    | `Error e -> begin
-        match e with 
-        | `Not_found -> raise (Failure (Printf.sprintf "%s: Not found" msg))
-        | `Disconnected -> raise (Failure (Printf.sprintf "%s: Disconnected" msg))
-        | `Unknown s -> raise (Failure (Printf.sprintf "%s: %s" msg s))
-      end
+    | `Error e -> raise (Failure (Printf.sprintf "%s: %s" (string_of_error e) msg))
     | `Ok t -> return t
 
   let get_vm_name t vm =
@@ -101,7 +104,7 @@ module Make (Vm_backend : Backends.VM_BACKEND) = struct
           Irmin_backend.get_ip t.storage ~vm_name >>= fun r ->
           or_vm_backend_error "Unable to get MAC for VM" (Vm_backend.get_mac t.vm_backend) vm >>= fun vm_mac ->
           match r, vm_mac with
-          | Some ip, Some m -> begin
+          | Some ip, [m] -> begin
               t.log (Printf.sprintf "Notifying Synjitsu of MAC %s\n" (Macaddr.to_string m));
               try_lwt
                 Synjitsu.send_garp s m ip
@@ -109,7 +112,8 @@ module Make (Vm_backend : Backends.VM_BACKEND) = struct
                 t.log (Printf.sprintf "Got exception %s\n" (Printexc.to_string e));
                 Lwt.return_unit
             end
-          | _, None -> t.log (Printf.sprintf "VM %s has no MAC address. Synjitsu not notified." vm_name); Lwt.return_unit
+          | _, [] -> t.log (Printf.sprintf "VM %s has no MAC address. Synjitsu not notified." vm_name); Lwt.return_unit
+          | _, _::_::_ -> t.log (Printf.sprintf "VM %s has multiple MAC addresses (not supported). Synjitsu not notified.." vm_name); Lwt.return_unit
           | None, _ -> t.log (Printf.sprintf "VM %s has no IP. Synjitsu not notified." vm_name); Lwt.return_unit
         end
     in
@@ -133,7 +137,8 @@ module Make (Vm_backend : Backends.VM_BACKEND) = struct
       Lwt_unix.sleep delay
     | Vm_state.Off ->
       t.log " --> creating vm...\n";
-      or_vm_backend_error "Unable to create VM" (Vm_backend.start_vm t.vm_backend) vm >>= fun () ->
+      Irmin_backend.get_vm_config t.storage ~vm_name >>= fun config ->
+      or_vm_backend_error "Unable to create VM" (Vm_backend.start_vm t.vm_backend vm) config >>= fun () ->
       Lwt.async(notify_synjitsu);
       update_stats () >>= fun () ->
       Irmin_backend.get_response_delay t.storage ~vm_name >>= fun delay ->
@@ -190,17 +195,16 @@ module Make (Vm_backend : Backends.VM_BACKEND) = struct
         Lwt.return_unit) vm_names
 
   (* add vm to be monitored by jitsu *)
-  let add_vm t ~vm_name ~vm_ip ~vm_stop_mode ~dns_names ~dns_ttl ~response_delay =
+  let add_vm t ~vm_name ~vm_ip ~vm_stop_mode ~dns_names ~dns_ttl ~response_delay ~vm_config =
     (* check if vm_name exists and set up VM record *)
 
     or_vm_backend_error "Unable to lookup VM by name" (Vm_backend.lookup_vm_by_name t.vm_backend) vm_name >>= fun vm_dom ->
     or_vm_backend_error "Unable to get MAC for VM" (Vm_backend.get_mac t.vm_backend) vm_dom >>= fun vm_mac ->
 
-    Irmin_backend.add_vm t.storage ~vm_name ~vm_mac ~vm_ip ~vm_stop_mode ~response_delay >>= fun () ->
+    Irmin_backend.add_vm t.storage ~vm_name ~vm_mac ~vm_ip ~vm_stop_mode ~response_delay ~vm_config >>= fun () ->
     Lwt_list.iter_s (fun dns_name ->
         Irmin_backend.add_vm_dns t.storage ~vm_name ~dns_name ~dns_ttl
       ) dns_names
-
 
   (* iterate through t.name_table and stop VMs that haven't received
      requests for more than ttl*2 seconds *)

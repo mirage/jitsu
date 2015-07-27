@@ -14,16 +14,20 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  *)
 
-type uuid = string
-type error = [ `Not_found | `Disconnected | `Unknown of string ]
+type uuid = Uuidm.t
+type error = [ `Not_found | `Disconnected of string | `Unknown of string | `Unable_to_connect of string | `Not_supported | `Invalid_config of string ]
+type config = (string, string) Hashtbl.t
 
 module type VM_BACKEND =
 sig
   type t
   type vm
 
-  val connect : string -> [ `Ok of t | `Error of error ] Lwt.t
-  (** Connect to backend **)
+  val connect : ?log_f:(string -> unit) -> ?connstr:Uri.t -> unit -> [ `Ok of t | `Error of error ] Lwt.t
+  (** Connect to backend *)
+
+  val get_config_option_list : (string * string) list
+  (** Get list of supported configuration options *)
 
   val lookup_vm_by_uuid : t -> uuid -> [ `Ok of vm | `Error of error ] Lwt.t
   (** Lookup a VM by UUID *)
@@ -37,14 +41,14 @@ sig
   val get_name : t -> vm -> [ `Ok of string | `Error of error ] Lwt.t
   (** Get VM name from [vm] type *)
 
-  val get_uuid : t -> vm -> [ `Ok of string | `Error of error ] Lwt.t
+  val get_uuid : t -> vm -> [ `Ok of Uuidm.t | `Error of error ] Lwt.t
   (** Get VM UUID from [vm] type *)
 
   val get_domain_id : t -> vm -> [ `Ok of int | `Error of error ] Lwt.t
   (** Get VM domain ID *)
 
-  val get_mac : t -> vm -> [ `Ok of Macaddr.t option | `Error of error ] Lwt.t
-  (** Get MAC address of this VM *)
+  val get_mac : t -> vm -> [ `Ok of Macaddr.t list | `Error of error ] Lwt.t
+  (** Get MAC addresses of this VM *)
 
   val shutdown_vm : t -> vm -> [ `Ok of unit | `Error of error ] Lwt.t
   (** Shutdown VM *)
@@ -61,7 +65,7 @@ sig
   val unpause_vm : t -> vm -> [ `Ok of unit | `Error of error ] Lwt.t
   (** Unpause VM *)
 
-  val start_vm : t -> vm -> [ `Ok of unit | `Error of error] Lwt.t
+  val start_vm : t -> vm -> config -> [ `Ok of unit | `Error of error] Lwt.t
   (** Start VM *)
 
 end
