@@ -37,7 +37,7 @@ let try_xapi msg f =
   | e -> Lwt.return (`Error (`Unknown (Printf.sprintf "%s: %s" msg (Printexc.to_string e))))
 
 let define_vm t ~name_label ~pV_kernel =
-  try_xapi "Unable to define vm" (fun () -> 
+  try_xapi "Unable to define vm" (fun () ->
       let (rpc, session_id) = t.connection in
       lwt vm = VM.create ~rpc ~session_id
           ~name_label ~name_description:"" ~user_version:0L
@@ -75,10 +75,10 @@ let define_vm t ~name_label ~pV_kernel =
 let default_log s =
   Printf.printf "xapi_backend: %s\n" s
 
-let connect ?log_f:(log_f=default_log) ?connstr () = 
+let connect ?log_f:(log_f=default_log) ?connstr () =
   match connstr with
   | None -> Lwt.return (`Error (`Unable_to_connect "Empty connect string"))
-  | Some uri -> try_xapi "Unable to connect" (fun () -> 
+  | Some uri -> try_xapi "Unable to connect" (fun () ->
       let host = match Uri.host uri with | Some h -> h | None -> "127.0.0.1" in
       let user = match Uri.user uri with | Some u -> u | None -> "root" in
       let pass = match Uri.host uri with | Some h -> h | None -> "" in
@@ -89,7 +89,7 @@ let connect ?log_f:(log_f=default_log) ?connstr () =
 
 (* convert vm state to string *)
 let xapi_state_to_vm_state = function
-  | `Running -> Vm_state.Running 
+  | `Running -> Vm_state.Running
   | `Paused -> Vm_state.Paused
   | `Halted -> Vm_state.Off
   | `Suspended -> Vm_state.Suspended
@@ -106,7 +106,7 @@ let lookup_vm_by_uuid t vm_uuid =
 
 let lookup_vm_by_name t vm_name =
   (* Xapi: multiple domain can share the same name TODO: *)
-  try_xapi "Unable lookup VM name" (fun () -> 
+  try_xapi "Unable lookup VM name" (fun () ->
       let (rpc, session_id) = t.connection in
       lwt domains = VM.get_by_name_label ~rpc:rpc ~session_id:session_id ~label:vm_name in
       lwt uuid = VM.get_uuid ~rpc:rpc ~session_id:session_id ~self:(List.hd domains) in
@@ -114,7 +114,7 @@ let lookup_vm_by_name t vm_name =
     )
 
 let get_state t vm =
-  try_xapi "Unable to get VM state" (fun () -> 
+  try_xapi "Unable to get VM state" (fun () ->
       let (rpc, session_id) = t.connection in
       lwt domain = VM.get_by_uuid ~rpc:rpc ~session_id:session_id ~uuid:vm.uuid in
       lwt state = VM.get_power_state ~rpc:rpc ~session_id:session_id ~self:domain in
@@ -122,49 +122,49 @@ let get_state t vm =
     )
 
 let destroy_vm t vm =
-  try_xapi "Unable to destroy VM" (fun () -> 
+  try_xapi "Unable to destroy VM" (fun () ->
       let (rpc, session_id) = t.connection in
       lwt domain = VM.get_by_uuid ~rpc:rpc ~session_id:session_id ~uuid:vm.uuid in
       VM.destroy ~rpc:rpc ~session_id:session_id ~self:domain
     )
 
 let shutdown_vm t vm =
-  try_xapi "Unable to shutdown VM" (fun () -> 
+  try_xapi "Unable to shutdown VM" (fun () ->
       let (rpc, session_id) = t.connection in
       lwt domain = VM.get_by_uuid ~rpc:rpc ~session_id:session_id ~uuid:vm.uuid in
       VM.hard_shutdown ~rpc:rpc ~session_id:session_id ~vm:domain
     )
 
 let suspend_vm t vm =
-  try_xapi "Unable to suspend VM" (fun () -> 
+  try_xapi "Unable to suspend VM" (fun () ->
       let (rpc, session_id) = t.connection in
       lwt domain = VM.get_by_uuid ~rpc:rpc ~session_id:session_id ~uuid:vm.uuid in
       VM.suspend ~rpc:rpc ~session_id:session_id ~vm:domain
     )
 
 let pause_vm t vm =
-  try_xapi "Unable to suspend VM" (fun () -> 
+  try_xapi "Unable to suspend VM" (fun () ->
       let (rpc, session_id) = t.connection in
       lwt domain = VM.get_by_uuid ~rpc:rpc ~session_id:session_id ~uuid:vm.uuid in
       VM.pause ~rpc:rpc ~session_id:session_id ~vm:domain
     )
 
 let unpause_vm t vm = (* from pause state *)
-  try_xapi "Unable to resume VM" (fun () -> 
+  try_xapi "Unable to resume VM" (fun () ->
       let (rpc, session_id) = t.connection in
       lwt domain = VM.get_by_uuid ~rpc:rpc ~session_id:session_id ~uuid:vm.uuid in
       VM.unpause ~rpc:rpc ~session_id:session_id ~vm:domain
     )
 
 let resume_vm t vm = (* from suspended state *)
-  try_xapi "Unable to unsuspend VM" (fun () -> 
+  try_xapi "Unable to unsuspend VM" (fun () ->
       let (rpc, session_id) = t.connection in
       lwt domain = VM.get_by_uuid ~rpc:rpc ~session_id:session_id ~uuid:vm.uuid in
       VM.resume ~rpc:rpc ~session_id:session_id ~vm:domain ~start_paused:false ~force:true
     )
 
 let start_vm t vm config =
-  try_xapi "Unable to start VM" (fun () -> 
+  try_xapi "Unable to start VM" (fun () ->
       let (rpc, session_id) = t.connection in
       lwt domain = VM.get_by_uuid ~rpc:rpc ~session_id:session_id ~uuid:vm.uuid in
       VM.start ~rpc:rpc ~session_id:session_id ~vm:domain ~start_paused:false ~force:true
@@ -203,5 +203,5 @@ let get_domain_id t vm =
       Lwt.return (Int64.to_int id)
     )
 
-let get_config_option_list = 
+let get_config_option_list =
   []

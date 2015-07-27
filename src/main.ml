@@ -134,23 +134,23 @@ let backend =
          `Libvirt & info ["x" ; "backend" ] ~docv:"BACKEND" ~doc)
 
 
-let jitsu backend connstr bindaddr bindport forwarder forwardport response_delay 
+let jitsu backend connstr bindaddr bindport forwarder forwardport response_delay
     map_domain ttl vm_stop_mode use_synjitsu =
-  let (module B) = 
-    if backend = `Libvirt then 
-      (module Libvirt_backend : Backends.VM_BACKEND) 
+  let (module B) =
+    if backend = `Libvirt then
+      (module Libvirt_backend : Backends.VM_BACKEND)
     else if backend = `Xapi then
-      (module Xapi_backend : Backends.VM_BACKEND) 
+      (module Xapi_backend : Backends.VM_BACKEND)
     else if backend = `Libxl then
-      (module Libxl_backend : Backends.VM_BACKEND) 
+      (module Libxl_backend : Backends.VM_BACKEND)
     else
-      (module Libvirt_backend) 
+      (module Libvirt_backend)
   in
   let module Jitsu = Jitsu.Make(B) in
-  (*let map_domain = 
+  (*let map_domain =
     List.map (fun (dns_name, ip, vm_name) ->
         ((Dns.Name.of_string dns_name), (Ipaddr.V4.of_string_exn ip), vm_name)
-      ) map_domain 
+      ) map_domain
     in*)
   let rec maintenance_thread t timeout =
     Lwt_unix.sleep timeout >>= fun () ->
@@ -174,7 +174,7 @@ let jitsu backend connstr bindaddr bindport forwarder forwardport response_delay
      let connstr = Uri.of_string connstr in
      B.connect ~connstr () >>= fun r ->
      match r with
-     | `Error _ -> raise (Failure "Unable to connect to backend") 
+     | `Error _ -> raise (Failure "Unable to connect to backend")
      | `Ok backend_t ->
        or_abort (fun () -> Jitsu.create backend_t log forward_resolver ~use_synjitsu ()) >>= fun t ->
        Lwt.choose [(
@@ -182,13 +182,13 @@ let jitsu backend connstr bindaddr bindport forwarder forwardport response_delay
            let add_with_config config_array = (
              let vm_config = (Hashtbl.create (Array.length config_array)) in
              (Array.iter (fun (k,v) -> Hashtbl.replace vm_config k v) config_array);
-             let get k = 
+             let get k =
                (Printf.printf "%s=" k;
                 try
                   let v = (Hashtbl.find vm_config k) in
-                  Printf.printf "%s\n" v; v 
+                  Printf.printf "%s\n" v; v
                 with Not_found -> log (Printf.sprintf "Missing command line key: %s\n" k); raise Not_found)
-             in 
+             in
              let dns_name = Dns.Name.of_string (get "dns") in
              let vm_name = get "name" in
              let vm_ip = Ipaddr.V4.of_string_exn (get "ip") in

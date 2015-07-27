@@ -17,7 +17,7 @@ open Lwt
 open Irmin_unix
 
 (* Structure
- * Jitsu 
+ * Jitsu
  *      \-vm (vm/dns configuration)
  *          \-[vm_name]
  *              \-dns
@@ -51,7 +51,7 @@ let get_float t path  =
   | Some s -> Lwt.return (Some (float_of_string s))
 
 let set_float t path f =
-  Irmin.update t path (string_of_float f) 
+  Irmin.update t path (string_of_float f)
 
 let default_log msg =
   Printf.printf "irmin_backend: %s\n" msg
@@ -59,20 +59,20 @@ let default_log msg =
 let create ?persist:(persist=true) ?root:(root="irmin/test") ?log:(log=default_log) () =
   let config = Irmin_git.config ~root ~bare:true () in
   let store = match persist with
-    | true -> Irmin.basic (module Irmin_git.FS) (module Irmin.Contents.String) 
+    | true -> Irmin.basic (module Irmin_git.FS) (module Irmin.Contents.String)
     | false -> Irmin.basic (module Irmin_git.Memory) (module Irmin.Contents.String)
   in
   Irmin.create store config task >>= fun connection ->
   let dns_cache = Dns.Loader.new_db () in (* Start with empty DNS db *)
   let dns_cache_dirty = false in
-  Lwt.return { connection ; log ; dns_cache_dirty ; dns_cache } 
+  Lwt.return { connection ; log ; dns_cache_dirty ; dns_cache }
 
 let add_vm_dns t ~vm_name ~dns_name ~dns_ttl =
   let it = t.connection in
   let path = [ "jitsu" ; "vm" ; vm_name ; "dns" ; (Dns.Name.to_string dns_name) ] in
   Irmin.update (it "Registering domain ttl")      (path @ [ "ttl" ]) (string_of_int dns_ttl) >>= fun () ->
-  t.dns_cache_dirty <- true; 
-  Lwt.return_unit 
+  t.dns_cache_dirty <- true;
+  Lwt.return_unit
 
 let add_vm t ~vm_name ~vm_mac ~vm_ip ~vm_stop_mode ~response_delay ~vm_config =
   let it = t.connection in
@@ -81,7 +81,7 @@ let add_vm t ~vm_name ~vm_mac ~vm_ip ~vm_stop_mode ~response_delay ~vm_config =
   Irmin.update (it "Registering VM response delay")  (path @ [ "response_delay" ]) (string_of_float response_delay) >>= fun () ->
   Irmin.update (it "Registering VM IP")              (path @ [ "ip" ]) (Ipaddr.V4.to_string vm_ip) >>= fun () ->
   let path = path @ [ "config" ] in
-  let config = Hashtbl.fold (fun k v l -> 
+  let config = Hashtbl.fold (fun k v l ->
       l @ [(k,v)]) vm_config [] in (* fold hashtbl to list *)
   Lwt_list.iter_s (fun (k,v) ->  (* add config to irmin db *)
       Irmin.update (it (Printf.sprintf "Registering extra config value %s" k)) (path @ [ k ]) v) config >>= fun () ->
@@ -99,10 +99,10 @@ let get_stop_mode t ~vm_name =
   | None -> Lwt.return Vm_stop_mode.Unknown
   | Some s -> Lwt.return (Vm_stop_mode.of_string s)
 
-let set_stop_mode t ~vm_name stop_mode = 
+let set_stop_mode t ~vm_name stop_mode =
   let it = t.connection in
   let path = [ "jitsu" ; "vm" ; vm_name ] in
-  Irmin.update (it "Set stop mode") (path @ [ "stop_mode" ]) (Vm_stop_mode.to_string stop_mode) 
+  Irmin.update (it "Set stop mode") (path @ [ "stop_mode" ]) (Vm_stop_mode.to_string stop_mode)
 
 let get_ip t ~vm_name =
   let it = t.connection in
@@ -112,11 +112,11 @@ let get_ip t ~vm_name =
   | None -> Lwt.return_none
   | Some s -> Lwt.return (Ipaddr.V4.of_string s)
 
-let set_ip t ~vm_name ip = 
+let set_ip t ~vm_name ip =
   let it = t.connection in
   let path = [ "jitsu" ; "vm" ; vm_name ] in
   Irmin.update (it "Set VM IP") (path @ [ "ip" ]) (Ipaddr.V4.to_string ip) >>= fun () ->
-  t.dns_cache_dirty <- true; 
+  t.dns_cache_dirty <- true;
   Lwt.return_unit
 
 let get_last_request_timestamp t ~vm_name ~dns_name =
@@ -124,7 +124,7 @@ let get_last_request_timestamp t ~vm_name ~dns_name =
   let path = [ "jitsu" ; "stats" ; vm_name ; "dns" ; (Dns.Name.to_string dns_name)] in
   get_float (it "Get last request timestamp") (path @ [ "last_request_ts" ])
 
-let set_last_request_timestamp t ~vm_name ~dns_name last_request_ts = 
+let set_last_request_timestamp t ~vm_name ~dns_name last_request_ts =
   let it = t.connection in
   let path = [ "jitsu" ; "stats" ; vm_name ; "dns" ; (Dns.Name.to_string dns_name)] in
   set_float (it "Set last request timestamp") (path @ [ "last_request_ts" ]) last_request_ts
@@ -134,7 +134,7 @@ let get_start_timestamp t ~vm_name =
   let path = [ "jitsu" ; "stats" ; vm_name ] in
   get_float (it "Get start timestamp") (path @ [ "start_ts" ])
 
-let set_start_timestamp t ~vm_name start_ts = 
+let set_start_timestamp t ~vm_name start_ts =
   let it = t.connection in
   let path = [ "jitsu" ; "stats" ; vm_name ] in
   set_float (it "Set start timestamp") (path @ [ "start_ts" ]) start_ts
@@ -147,7 +147,7 @@ let get_total_starts t ~vm_name =
   | None -> Lwt.return 0
   | Some s -> Lwt.return (int_of_string s)
 
-let inc_total_starts t ~vm_name = 
+let inc_total_starts t ~vm_name =
   (* TODO Should use transaction / view *)
   let it = t.connection in
   let path = [ "jitsu" ; "stats" ; vm_name ] in
@@ -162,7 +162,7 @@ let get_total_requests t ~vm_name ~dns_name =
   | None -> Lwt.return 0
   | Some s -> Lwt.return (int_of_string s)
 
-let inc_total_requests t ~vm_name ~dns_name = 
+let inc_total_requests t ~vm_name ~dns_name =
   (* TODO Should use transaction / view *)
   let it = t.connection in
   let path = [ "jitsu" ; "stats" ; vm_name ; "dns" ; (Dns.Name.to_string dns_name) ] in

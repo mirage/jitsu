@@ -21,7 +21,7 @@ let of_string s =
     Destroy
   else
   if s = "suspend" then
-    Suspend 
+    Suspend
   else
   if s = "shutdown" then
     Shutdown

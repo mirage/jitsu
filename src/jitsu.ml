@@ -23,7 +23,7 @@ module Make (Vm_backend : Backends.VM_BACKEND) = struct
   type t = {
     mutable dns_db : Loader.db;                         (* DNS database *)
     storage : Irmin_backend.t;
-    log : string -> unit;                   (* Log function *) 
+    log : string -> unit;                   (* Log function *)
     vm_backend : Vm_backend.t;                          (* Backend type *)
     forward_resolver : Dns_resolver_unix.t option; (* DNS to forward request to if no
                                                       local match *)
@@ -39,17 +39,17 @@ module Make (Vm_backend : Backends.VM_BACKEND) = struct
       | None -> None
     in
     Irmin_backend.create ~persist:false ~root:"/tmp/jitsu" () >>= fun storage ->
-    Lwt.return { 
+    Lwt.return {
       dns_db = Loader.new_db ();
       storage;
-      log; 
+      log;
       vm_backend;
       forward_resolver = forward_resolver;
       synjitsu ;
     }
 
   let string_of_error e =
-    match e with 
+    match e with
     | `Invalid_config s -> (Printf.sprintf "Invalid config: %s" s)
     | `Not_found -> "Not found"
     | `Not_supported -> "Not supported"
@@ -75,17 +75,17 @@ module Make (Vm_backend : Backends.VM_BACKEND) = struct
     | Vm_state.Running ->
       Irmin_backend.get_stop_mode t.storage ~vm_name >>= fun stop_mode ->
       begin match stop_mode with
-        | Vm_stop_mode.Unknown -> t.log (Printf.sprintf "Unable to stop VM %s. Unknown stop mode requested\n" vm_name); 
+        | Vm_stop_mode.Unknown -> t.log (Printf.sprintf "Unable to stop VM %s. Unknown stop mode requested\n" vm_name);
           Lwt.return_unit
         | Vm_stop_mode.Shutdown -> t.log (Printf.sprintf "VM shutdown: %s\n" vm_name);
           or_vm_backend_error "Unable to shutdown VM" (Vm_backend.shutdown_vm t.vm_backend) vm
         | Vm_stop_mode.Suspend  -> t.log (Printf.sprintf "VM suspend: %s\n" vm_name);
           or_vm_backend_error "Unable to suspend VM" (Vm_backend.suspend_vm t.vm_backend) vm
-        | Vm_stop_mode.Destroy  -> t.log (Printf.sprintf "VM destroy: %s\n" vm_name) ; 
+        | Vm_stop_mode.Destroy  -> t.log (Printf.sprintf "VM destroy: %s\n" vm_name) ;
           or_vm_backend_error "Unable to destroy VM" (Vm_backend.destroy_vm t.vm_backend) vm
       end
     | Vm_state.Off
-    | Vm_state.Paused 
+    | Vm_state.Paused
     | Vm_state.Suspended
     | Vm_state.Unknown -> Lwt.return_unit (* VM already stopped or nothing we can do... *)
 
@@ -149,7 +149,7 @@ module Make (Vm_backend : Backends.VM_BACKEND) = struct
 
   let output_stats t vm_names =
     let current_time = Unix.time () in
-    let ip_option_to_string ip_option = 
+    let ip_option_to_string ip_option =
       match ip_option with
       | None -> "None"
       | Some ip -> Ipaddr.V4.to_string ip
@@ -168,13 +168,13 @@ module Make (Vm_backend : Backends.VM_BACKEND) = struct
         Irmin_backend.get_start_timestamp t.storage ~vm_name >>= fun start_ts ->
         Irmin_backend.get_total_starts t.storage ~vm_name >>= fun total_starts ->
         Irmin_backend.get_stop_mode t.storage ~vm_name >>= fun stop_mode ->
-        let first_part = (Printf.sprintf "%15s %10s %10f %10s %10d %10s" 
-                            vm_name 
+        let first_part = (Printf.sprintf "%15s %10s %10f %10s %10d %10s"
+                            vm_name
                             (Vm_state.to_string vm_state)
                             response_delay
                             (ts start_ts)
                             total_starts
-                            (Vm_stop_mode.to_string stop_mode)) 
+                            (Vm_stop_mode.to_string stop_mode))
         in
         (* Get list of DNS domains for this vm_name *)
         Irmin_backend.get_vm_dns_name_list t.storage ~vm_name >>= fun dns_name_list ->
@@ -182,7 +182,7 @@ module Make (Vm_backend : Backends.VM_BACKEND) = struct
             Irmin_backend.get_last_request_timestamp t.storage ~vm_name ~dns_name >>= fun last_request_ts ->
             Irmin_backend.get_total_requests t.storage ~vm_name ~dns_name >>= fun total_requests ->
             Irmin_backend.get_ttl t.storage ~vm_name ~dns_name >>= fun ttl ->
-            t.log (first_part ^ (Printf.sprintf " %30s %15s %8d %8d %7s\n" 
+            t.log (first_part ^ (Printf.sprintf " %30s %15s %8d %8d %7s\n"
                                    (Dns.Name.to_string dns_name)
                                    (ip_option_to_string vm_ip)
                                    ttl
@@ -215,11 +215,11 @@ module Make (Vm_backend : Backends.VM_BACKEND) = struct
         or_vm_backend_error "Unable to look up VM name" (Vm_backend.lookup_vm_by_name t.vm_backend) vm_name >>= fun vm ->
         get_vm_state t vm >>= fun vm_state ->
         match vm_state with
-        | Vm_state.Off 
-        | Vm_state.Paused 
+        | Vm_state.Off
+        | Vm_state.Paused
         | Vm_state.Suspended
         | Vm_state.Unknown -> Lwt.return_none (* VM already stopped/paused/crashed.. *)
-        | Vm_state.Running -> 
+        | Vm_state.Running ->
           (* Get list of DNS domains that have been requested (has requested timestamp != None) and has NOT expired (timestamp is younger than ttl*2) *)
           Irmin_backend.get_vm_dns_name_list t.storage ~vm_name >>= fun dns_name_list ->
           Lwt_list.filter_map_s (fun dns_name ->
@@ -233,8 +233,8 @@ module Make (Vm_backend : Backends.VM_BACKEND) = struct
                   Lwt.return (Some dns_name)
                 else
                   Lwt.return_none
-            ) dns_name_list 
-          >>= fun unexpired_dns_names -> 
+            ) dns_name_list
+          >>= fun unexpired_dns_names ->
           if (List.length unexpired_dns_names) > 0 then (* If VM has unexpired DNS domains, DON'T terminate *)
             Lwt.return_none
           else
@@ -286,7 +286,7 @@ module Make (Vm_backend : Backends.VM_BACKEND) = struct
           if (List.length list_of_ips) = 0 then begin
             t.log (Printf.sprintf "No valid match for %s. Forwarding.\n" (Dns.Name.to_string q.q_name));
             Dns_helpers.fallback t.forward_resolver q.q_class q.q_type q.q_name
-          end else 
+          end else
             (* TODO how to return results with multiple IPs - for now just return DNS answer *)
             return (Some answer)
         | _ ->

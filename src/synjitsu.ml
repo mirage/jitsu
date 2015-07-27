@@ -31,7 +31,7 @@ module Make (Backend : Backends.VM_BACKEND) = struct
   let or_error msg fn t =
     fn t >>= function
     | `Error e -> begin
-        match e with 
+        match e with
         | `Invalid_config s -> raise (Failure (Printf.sprintf "%s: %s" msg s))
         | `Not_found -> raise (Failure (Printf.sprintf "%s: Not found" msg))
         | `Not_supported -> raise (Failure (Printf.sprintf "%s: Not supported" msg))
@@ -42,18 +42,18 @@ module Make (Backend : Backends.VM_BACKEND) = struct
     | `Ok t -> return t
 
   let create backend log vm_uuid vchan_port =
-    {log; 
+    {log;
      backend;
-     vm_uuid; 
-     vchan_port; 
+     vm_uuid;
+     vchan_port;
      is_connecting = ref false;
-     ic = ref None; 
+     ic = ref None;
      oc = ref None}
 
   let disconnect t =
     (match !(t.ic) with
      | None -> Lwt.return_unit
-     | Some x -> Lwt_io.abort x >>= fun () -> t.ic := None; Lwt.return_unit) 
+     | Some x -> Lwt_io.abort x >>= fun () -> t.ic := None; Lwt.return_unit)
     >>= fun () ->
     match !(t.oc) with
     | None -> Lwt.return_unit
@@ -79,21 +79,21 @@ module Make (Backend : Backends.VM_BACKEND) = struct
           t.log "synjitsu: Connected\n";
           t.ic := Some ic;
           t.oc := Some oc;
-          t.is_connecting := false; 
+          t.is_connecting := false;
           Lwt.return_unit
         end else
         Lwt.return_unit
-    with 
-      exn -> t.log (Printf.sprintf "synjitsu: Unable to connect: %s\n" (Printexc.to_string exn)); 
-      t.is_connecting := false; 
+    with
+      exn -> t.log (Printf.sprintf "synjitsu: Unable to connect: %s\n" (Printexc.to_string exn));
+      t.is_connecting := false;
       Lwt.return_unit
 
   let send t buf =
     match !(t.oc) with
     | None -> t.log "synjitsu: Unable to send - message dropped. Trying to connect...\n"; ignore_result (connect t); Lwt.return_unit
-    | Some oc -> try_lwt 
+    | Some oc -> try_lwt
         Lwt_io.write_from_string_exactly oc (Cstruct.to_string buf) 0 (Cstruct.len buf)
-      with 
+      with
         End_of_file -> t.log "synjitsu: disconnected.\n" ; ignore_result (connect t); Lwt.return_unit
 
   let send_garp t mac ip =

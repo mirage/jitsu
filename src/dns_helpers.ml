@@ -45,7 +45,7 @@ let get_base_domain domain =
 (** fallback to external resolver if local lookup fails *)
 let fallback forwarder _class _type _name =
   match forwarder with
-  | Some f -> 
+  | Some f ->
     Dns_resolver_unix.resolve f _class _type _name
     >>= fun result ->
     Lwt.return (Some (Dns.Query.answer_of_response result))

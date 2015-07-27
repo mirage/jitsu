@@ -17,7 +17,7 @@
 type t
 type id
 
-val create : ?persist:bool -> ?root:string -> ?log:(string -> unit) -> unit -> t Lwt.t 
+val create : ?persist:bool -> ?root:string -> ?log:(string -> unit) -> unit -> t Lwt.t
 
 val get_dns_db : t -> Dns.Loader.db Lwt.t
 (** Get DNS DB representation for use with ocaml-dns *)
@@ -49,10 +49,10 @@ val get_last_request_timestamp : t -> vm_name:string -> dns_name:Dns.Name.t -> f
 val set_last_request_timestamp : t -> vm_name:string -> dns_name:Dns.Name.t -> float -> unit Lwt.t
 (** Set timestamp for last DNS request to VM/DNS name pair *)
 
-val get_total_starts : t -> vm_name:string -> int Lwt.t 
+val get_total_starts : t -> vm_name:string -> int Lwt.t
 (** Get total number of times the VM has been started *)
 
-val inc_total_starts : t -> vm_name:string -> unit Lwt.t 
+val inc_total_starts : t -> vm_name:string -> unit Lwt.t
 (** Increment the number of times the VM has been started *)
 
 val get_response_delay : t -> vm_name:string -> float Lwt.t
@@ -61,10 +61,10 @@ val get_response_delay : t -> vm_name:string -> float Lwt.t
 val set_response_delay : t -> vm_name:string -> float -> unit Lwt.t
 (** Set additional delay to add to DNS response for a VM *)
 
-val get_total_requests : t -> vm_name:string -> dns_name:Dns.Name.t -> int Lwt.t 
+val get_total_requests : t -> vm_name:string -> dns_name:Dns.Name.t -> int Lwt.t
 (** Get total requests to a VM/DNS name pair *)
 
-val inc_total_requests : t -> vm_name:string -> dns_name:Dns.Name.t -> unit Lwt.t 
+val inc_total_requests : t -> vm_name:string -> dns_name:Dns.Name.t -> unit Lwt.t
 (** Increment total requests to a VM/DNS name pair *)
 
 val get_ttl : t -> vm_name:string -> dns_name:Dns.Name.t -> int Lwt.t
