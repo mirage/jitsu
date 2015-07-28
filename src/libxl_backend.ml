@@ -358,7 +358,9 @@ let get_domain_id t vm =
     )
 
 let get_config_option_list =
-  [ ("name", "VM name (required)") ;
+  [ ("name", "Name of created VM (required)") ;
+    ("dns", "DNS name (required)") ;
+    ("ip", "IP to return in DNS reply (required)");
     ("kernel", "VM kernel file name (required)") ;
     ("mem", "VM memory in kb (required)") ;
     ("cmdline", "Extra parameters passed to kernel (optional)") ;

@@ -20,26 +20,36 @@ open Cmdliner
 let info =
   let doc =
     "Just-In-Time Summoning of Unikernels. Jitsu is a forwarding DNS server \
-     that automatically starts unikernel VMs when their domain is requested. \
+     that automatically boots unikernels when their domain is requested. \
      The DNS response is sent to the client after the unikernel has started, \
      enabling the client to use unmodified software to communicate with \
      unikernels that are started on demand. If no DNS requests are received \
-     for the unikernel within a given timeout period, the VM is automatically \
+     for the unikernel within a given timeout period, the unikernel is automatically \
      stopped." in
+  let list_options l =
+    List.map (fun x ->
+        let (k,v) = x in
+        `I ((Printf.sprintf "$(b,%s)" k), v)) l in
   let man = [
-    `S "EXAMPLES";
-    `P "jitsu -c xen:/// -f 8.8.8.8 -m destroy mirage.org,10.0.0.1,mirage-www";
-    `P "Connect to Xen. Start VM 'mirage-www' on requests for mirage.org and \
-        return IP 10.0.0.1 when VM is running. Forward unknown requests to \
-        8.8.8.8 (Google). Expired VMs are destroyed.";
-    `P "jitsu -c vbox:///session -m suspend home.local,192.168.0.1,ubuntu -t 60";
-    `P "Connect to Virtualbox. Start VM 'ubuntu' on requests for home.local \
-        and return IP 192.168.0.1. Forward unknown requests to system default. \
-        Expired VMs are suspended after 120 seconds (2 x DNS ttl).";
-    `S "AUTHORS";
-    `P "Magnus Skjegstad <magnus@skjegstad.com>" ;
-    `S "BUGS";
-    `P "Submit bug reports to http://github.com/magnuss/jitsu";] in
+    `S "LIBVIRT CONFIGURATION"
+  ] @ (list_options Libvirt_backend.get_config_option_list) @ [
+      `S "XAPI CONFIGURATION" ;
+    ] @ (list_options Xapi_backend.get_config_option_list) @ [
+      `S "LIBXL CONFIGURATION" ;
+    ] @ (list_options Libxl_backend.get_config_option_list) @ [
+      `S "EXAMPLES";
+      `P "$(b,jitsu -c xen:/// -f 8.8.8.8 dns=mirage.io,ip=10.0.0.1,vm=mirage-www)" ;
+      `P "Connect to Xen via libvirt. Start unikernel $(b,mirage-www) on requests for $(b,mirage.io) and \
+          return IP $(b,10.0.0.1) in DNS. Forward unknown requests to \
+          $(b,8.8.8.8).";
+      `P "$(b,jitsu -c vbox:///session -m suspend dns=home.local,ip=192.168.0.1,name=ubuntu -t 60)";
+      `P "Connect to Virtualbox. Start VM $(b,ubuntu) on requests for $(b,home.local) \
+          and return IP $(b,192.168.0.1). Forward unknown requests to system default. \
+          Expired VMs are $(b,suspended) after $(b,120) seconds (2 x DNS ttl).";
+      `S "AUTHORS";
+      `P "Magnus Skjegstad <magnus@skjegstad.com>" ;
+      `S "BUGS";
+      `P "Submit bug reports to http://github.com/mirage/jitsu";] in
   Term.info "jitsu" ~version:"0.2-alpha" ~doc ~man
 
 let bindaddr =
@@ -52,7 +62,7 @@ let bindport =
 
 let connstr =
   let doc =
-    "libvirt connection string (e.g. xen+ssh://x.x.x.x/system or vbox:///session)"
+    "Libvirt and Xapi connection string (e.g. xen+ssh://x.x.x.x/system or vbox:///session)"
   in
   Arg.(value & opt string "xen:///" & info ["c"; "connect"] ~docv:"CONNECT" ~doc)
 
@@ -78,9 +88,15 @@ let response_delay =
 
 let map_domain =
   let doc =
-    "Maps domain, ip, kernel and memory in KiB. Expects keys and values in the form key=val. Valid options vary with backend." in
+    "Unikernel configuration. Maps DNS and IP to a unikernel VM. Configuration \
+     options are passed as keys and values in the form \"key1=value1,key2=value2...\". \
+     A configuration string must be specified for each \
+     unikernel Jitsu should control. \
+     Required keys are $(b,name), $(b,dns) and $(b,ip). \
+     Depending on the selected virtualization backend, additional keys may be supported. \
+     See full list of available keys below." in
   Arg.(non_empty & pos_all (array ~sep:',' (t2 ~sep:'=' string string)) [] & info []
-         ~docv:"domain=...,ip=...,kernel=...,mem=...,nics=" ~doc)
+         ~docv:"CONFIG" ~doc)
 
 let ttl =
   let doc =
@@ -93,21 +109,22 @@ let vm_stop_mode =
   let doc =
     "How to stop running VMs after timeout. Valid options are $(b,suspend), \
      $(b,destroy) and $(b,shutdown). Suspended VMs are generally faster to \
-     resume, but require resources to store state. Note that Mirage \
+     resume, but require resources to store state. Note that MirageOS \
      suspend/resume is currently not supported on ARM." in
   Arg.(value & opt (enum [("destroy" , Vm_stop_mode.Destroy);
                           ("suspend" , Vm_stop_mode.Suspend);
                           ("shutdown", Vm_stop_mode.Shutdown)])
-         Vm_stop_mode.Shutdown & info ["m" ; "mode" ] ~docv:"MODE" ~doc)
+         Vm_stop_mode.Destroy & info ["m" ; "mode" ] ~docv:"MODE" ~doc)
 
 let synjitsu_domain_uuid =
   let doc =
     "UUID or domain name of a Synjitsu compatible unikernel. When specified, \
-     Jitsu will attempt to connect to this domain over Vchan on port 'synjitsu' \
+     Jitsu will attempt to connect to a Synjitsu unikernel over Vchan on port 'synjitsu' \
      and send notifications with updates on MAC- and IP-addresses of booted \
      unikernels. This allows Synjitsu to send gratuitous ARP on behalf of \
      booting unikernels and to cache incoming SYN packets until they are \
-     ready to receive them."  in
+     ready to receive them. This feature is experimental and requires a patched \
+     MirageOS TCP/IP stack."  in
   Arg.(value & opt (some string) None & info ["synjitsu"] ~docv:"NAME_OR_UUID" ~doc)
 
 let log m =
@@ -127,7 +144,8 @@ let or_warn_lwt msg f =
 
 let backend =
   let doc =
-    "Which backend to use. Currently libvirt and xapi (experimental) is supported." in
+    "Which backend to use. Currently libvirt, xapi and libxl are supported. Xapi and libxl \
+     are less tested and should be considered experimental." in
   Arg.(value & opt (enum [("libvirt" , `Libvirt);
                           ("libxl", `Libxl);
                           ("xapi", `Xapi)])
@@ -147,11 +165,6 @@ let jitsu backend connstr bindaddr bindport forwarder forwardport response_delay
       (module Libvirt_backend)
   in
   let module Jitsu = Jitsu.Make(B) in
-  (*let map_domain =
-    List.map (fun (dns_name, ip, vm_name) ->
-        ((Dns.Name.of_string dns_name), (Ipaddr.V4.of_string_exn ip), vm_name)
-      ) map_domain
-    in*)
   let rec maintenance_thread t timeout =
     Lwt_unix.sleep timeout >>= fun () ->
     log ".";

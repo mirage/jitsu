@@ -204,4 +204,6 @@ let get_domain_id t vm =
     )
 
 let get_config_option_list =
-  []
+  [ ("name", "Name of VM defined in Xapi (required)") ;
+    ("dns", "DNS name (required)") ;
+    ("ip", "IP to return in DNS reply (required)") ]
