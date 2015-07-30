@@ -19,7 +19,7 @@ module Make :
   sig
     type t
 
-    val create : Backend.t -> (string -> unit) -> string -> string -> t
+    val create : Backend.t -> (string -> unit) -> Uuidm.t -> string -> t
     val disconnect : t -> unit Lwt.t
     val connect : t -> unit Lwt.t
     val send : t -> Cstruct.t -> unit Lwt.t

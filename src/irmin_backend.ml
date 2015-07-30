@@ -19,18 +19,18 @@ open Irmin_unix
 (* Structure
  * Jitsu
  *      \-vm (vm/dns configuration)
- *          \-[vm_name]
+ *          \-[uuid]
  *              \-dns
  *                  \-[dns_name]
  *                      \-ttl
  *                      (+ other stats)
- *              \-config
+ *              \-config (this config is read by the virt. backend and contains optional parameters)
  *                  \ ...
  *              \-stop_mode
  *              \-response_delay (+ other stats)
  *              \-ip
  *     \-stats (various dynamic stats)
- *          \-[vm-name]
+ *          \-[uuid]
  *              \-dns
  *          ...
 *)
@@ -67,16 +67,16 @@ let create ?persist:(persist=true) ?root:(root="irmin/test") ?log:(log=default_l
   let dns_cache_dirty = false in
   Lwt.return { connection ; log ; dns_cache_dirty ; dns_cache }
 
-let add_vm_dns t ~vm_name ~dns_name ~dns_ttl =
+let add_vm_dns t ~vm_uuid ~dns_name ~dns_ttl =
   let it = t.connection in
-  let path = [ "jitsu" ; "vm" ; vm_name ; "dns" ; (Dns.Name.to_string dns_name) ] in
+  let path = [ "jitsu" ; "vm" ; (Uuidm.to_string vm_uuid) ; "dns" ; (Dns.Name.to_string dns_name) ] in
   Irmin.update (it "Registering domain ttl")      (path @ [ "ttl" ]) (string_of_int dns_ttl) >>= fun () ->
   t.dns_cache_dirty <- true;
   Lwt.return_unit
 
-let add_vm t ~vm_name ~vm_mac ~vm_ip ~vm_stop_mode ~response_delay ~vm_config =
+let add_vm t ~vm_uuid ~vm_ip ~vm_stop_mode ~response_delay ~vm_config =
   let it = t.connection in
-  let path = [ "jitsu" ; "vm" ; vm_name ] in
+  let path = [ "jitsu" ; "vm" ; (Uuidm.to_string vm_uuid) ] in
   Irmin.update (it "Registering VM stop mode")       (path @ [ "stop_mode" ]) (Vm_stop_mode.to_string vm_stop_mode) >>= fun () ->
   Irmin.update (it "Registering VM response delay")  (path @ [ "response_delay" ]) (string_of_float response_delay) >>= fun () ->
   Irmin.update (it "Registering VM IP")              (path @ [ "ip" ]) (Ipaddr.V4.to_string vm_ip) >>= fun () ->
@@ -86,115 +86,112 @@ let add_vm t ~vm_name ~vm_mac ~vm_ip ~vm_stop_mode ~response_delay ~vm_config =
   Lwt_list.iter_s (fun (k,v) ->  (* add config to irmin db *)
       Irmin.update (it (Printf.sprintf "Registering extra config value %s" k)) (path @ [ k ]) v) config >>= fun () ->
   t.dns_cache_dirty <- true;
-  let macs = List.map (fun v -> Macaddr.to_string v) vm_mac in
-  (match macs with
-   | [] -> Lwt.return_unit
-   | _ :: _ -> Irmin.update (it "Registering MAC address") (path @ [ "mac" ]) (String.concat "," macs) )
+  Lwt.return_unit
 
-let get_stop_mode t ~vm_name =
+let get_stop_mode t ~vm_uuid =
   let it = t.connection in
-  let path = [ "jitsu" ; "vm" ; vm_name ] in
+  let path = [ "jitsu" ; "vm" ; (Uuidm.to_string vm_uuid) ] in
   Irmin.read (it "Get stop mode") (path @ [ "stop_mode" ]) >>= fun r ->
   match r with
   | None -> Lwt.return Vm_stop_mode.Unknown
   | Some s -> Lwt.return (Vm_stop_mode.of_string s)
 
-let set_stop_mode t ~vm_name stop_mode =
+let set_stop_mode t ~vm_uuid stop_mode =
   let it = t.connection in
-  let path = [ "jitsu" ; "vm" ; vm_name ] in
+  let path = [ "jitsu" ; "vm" ; (Uuidm.to_string vm_uuid) ] in
   Irmin.update (it "Set stop mode") (path @ [ "stop_mode" ]) (Vm_stop_mode.to_string stop_mode)
 
-let get_ip t ~vm_name =
+let get_ip t ~vm_uuid =
   let it = t.connection in
-  let path = [ "jitsu" ; "vm" ; vm_name ] in
+  let path = [ "jitsu" ; "vm" ; (Uuidm.to_string vm_uuid) ] in
   Irmin.read (it "Get VM IP") (path @ [ "ip" ]) >>= fun r ->
   match r with
   | None -> Lwt.return_none
   | Some s -> Lwt.return (Ipaddr.V4.of_string s)
 
-let set_ip t ~vm_name ip =
+let set_ip t ~vm_uuid ip =
   let it = t.connection in
-  let path = [ "jitsu" ; "vm" ; vm_name ] in
+  let path = [ "jitsu" ; "vm" ; (Uuidm.to_string vm_uuid) ] in
   Irmin.update (it "Set VM IP") (path @ [ "ip" ]) (Ipaddr.V4.to_string ip) >>= fun () ->
   t.dns_cache_dirty <- true;
   Lwt.return_unit
 
-let get_last_request_timestamp t ~vm_name ~dns_name =
+let get_last_request_timestamp t ~vm_uuid ~dns_name =
   let it = t.connection in
-  let path = [ "jitsu" ; "stats" ; vm_name ; "dns" ; (Dns.Name.to_string dns_name)] in
+  let path = [ "jitsu" ; "stats" ; (Uuidm.to_string vm_uuid) ; "dns" ; (Dns.Name.to_string dns_name)] in
   get_float (it "Get last request timestamp") (path @ [ "last_request_ts" ])
 
-let set_last_request_timestamp t ~vm_name ~dns_name last_request_ts =
+let set_last_request_timestamp t ~vm_uuid ~dns_name last_request_ts =
   let it = t.connection in
-  let path = [ "jitsu" ; "stats" ; vm_name ; "dns" ; (Dns.Name.to_string dns_name)] in
+  let path = [ "jitsu" ; "stats" ; (Uuidm.to_string vm_uuid) ; "dns" ; (Dns.Name.to_string dns_name)] in
   set_float (it "Set last request timestamp") (path @ [ "last_request_ts" ]) last_request_ts
 
-let get_start_timestamp t ~vm_name =
+let get_start_timestamp t ~vm_uuid =
   let it = t.connection in
-  let path = [ "jitsu" ; "stats" ; vm_name ] in
+  let path = [ "jitsu" ; "stats" ; (Uuidm.to_string vm_uuid) ] in
   get_float (it "Get start timestamp") (path @ [ "start_ts" ])
 
-let set_start_timestamp t ~vm_name start_ts =
+let set_start_timestamp t ~vm_uuid start_ts =
   let it = t.connection in
-  let path = [ "jitsu" ; "stats" ; vm_name ] in
+  let path = [ "jitsu" ; "stats" ; (Uuidm.to_string vm_uuid) ] in
   set_float (it "Set start timestamp") (path @ [ "start_ts" ]) start_ts
 
-let get_total_starts t ~vm_name =
+let get_total_starts t ~vm_uuid =
   let it = t.connection in
-  let path = [ "jitsu" ; "stats" ; vm_name ] in
+  let path = [ "jitsu" ; "stats" ; (Uuidm.to_string vm_uuid) ] in
   Irmin.read (it "Get total starts") (path @ [ "total_starts" ]) >>= fun r ->
   match r with
   | None -> Lwt.return 0
   | Some s -> Lwt.return (int_of_string s)
 
-let inc_total_starts t ~vm_name =
+let inc_total_starts t ~vm_uuid =
   (* TODO Should use transaction / view *)
   let it = t.connection in
-  let path = [ "jitsu" ; "stats" ; vm_name ] in
-  get_total_starts t ~vm_name >>= fun starts ->
+  let path = [ "jitsu" ; "stats" ; (Uuidm.to_string vm_uuid) ] in
+  get_total_starts t ~vm_uuid >>= fun starts ->
   Irmin.update (it "Increase total starts") (path @ [ "total_starts" ]) (string_of_int (starts + 1))
 
-let get_total_requests t ~vm_name ~dns_name =
+let get_total_requests t ~vm_uuid ~dns_name =
   let it = t.connection in
-  let path = [ "jitsu" ; "stats" ; vm_name ; "dns" ; (Dns.Name.to_string dns_name)] in
+  let path = [ "jitsu" ; "stats" ; (Uuidm.to_string vm_uuid) ; "dns" ; (Dns.Name.to_string dns_name)] in
   Irmin.read (it "Get total requests") (path @ [ "total_requests" ]) >>= fun r ->
   match r with
   | None -> Lwt.return 0
   | Some s -> Lwt.return (int_of_string s)
 
-let inc_total_requests t ~vm_name ~dns_name =
+let inc_total_requests t ~vm_uuid ~dns_name =
   (* TODO Should use transaction / view *)
   let it = t.connection in
-  let path = [ "jitsu" ; "stats" ; vm_name ; "dns" ; (Dns.Name.to_string dns_name) ] in
-  get_total_requests t ~vm_name ~dns_name >>= fun total_requests ->
+  let path = [ "jitsu" ; "stats" ; (Uuidm.to_string vm_uuid) ; "dns" ; (Dns.Name.to_string dns_name) ] in
+  get_total_requests t ~vm_uuid ~dns_name >>= fun total_requests ->
   Irmin.update (it "Increase total requests") (path @ [ "total_requests" ]) (string_of_int (total_requests + 1))
 
-let get_ttl t ~vm_name ~dns_name =
+let get_ttl t ~vm_uuid ~dns_name =
   let it = t.connection in
-  let path = [ "jitsu" ; "vm" ; vm_name ; "dns" ; (Dns.Name.to_string dns_name) ] in
+  let path = [ "jitsu" ; "vm" ; (Uuidm.to_string vm_uuid) ; "dns" ; (Dns.Name.to_string dns_name) ] in
   Irmin.read (it "Get DNS TTL") (path @ [ "ttl" ]) >>= fun r ->
   match r with
   | None -> Lwt.return 0
   | Some s -> Lwt.return (int_of_string s)
 
-let set_ttl t ~vm_name ~dns_name ttl =
+let set_ttl t ~vm_uuid ~dns_name ttl =
   let it = t.connection in
-  let path = [ "jitsu" ; "vm" ; vm_name ; "dns" ; (Dns.Name.to_string dns_name) ] in
+  let path = [ "jitsu" ; "vm" ; (Uuidm.to_string vm_uuid) ; "dns" ; (Dns.Name.to_string dns_name) ] in
   Irmin.update (it "Set DNS TTL") (path @ [ "ttl" ]) (string_of_int ttl) >>= fun () ->
   t.dns_cache_dirty <- true;
   Lwt.return_unit
 
-let get_response_delay t ~vm_name =
+let get_response_delay t ~vm_uuid =
   let it = t.connection in
-  let path = [ "jitsu" ; "vm" ; vm_name ; "response_delay" ] in
+  let path = [ "jitsu" ; "vm" ; (Uuidm.to_string vm_uuid) ; "response_delay" ] in
   get_float (it "Get VM response delay") path >>= fun d ->
   match d with
   | None -> Lwt.return 0.0
   | Some f -> Lwt.return f
 
-let set_response_delay t ~vm_name response_delay =
+let set_response_delay t ~vm_uuid response_delay =
   let it = t.connection in
-  let path = [ "jitsu" ; "vm" ; vm_name ; "response_delay" ] in
+  let path = [ "jitsu" ; "vm" ; (Uuidm.to_string vm_uuid) ; "response_delay" ] in
   set_float (it "Set VM response delay") path response_delay
 
 (** Get a list of sub-key names as strings from an Irmin path *)
@@ -207,9 +204,9 @@ let get_key_names t path =
       | Some (_,key) -> Lwt.return (Some key)
     ) key_list
 
-let get_vm_config t ~vm_name =
+let get_vm_config t ~vm_uuid =
   let it = t.connection in
-  let path = [ "jitsu" ; "vm" ; vm_name ; "config" ] in
+  let path = [ "jitsu" ; "vm" ; (Uuidm.to_string vm_uuid) ; "config" ] in
   get_key_names t path >>= fun config_keys ->
   let h = Hashtbl.create (List.length config_keys) in
   Lwt_list.iter_s (fun k ->
@@ -221,10 +218,15 @@ let get_vm_config t ~vm_name =
 
 let get_vm_list t =
   let path = [ "jitsu" ; "vm" ] in
-  get_key_names t path
+  get_key_names t path >>= fun key_names ->
+  Lwt_list.filter_map_s (fun v ->
+      match (Uuidm.of_string v) with
+      | None -> t.log (Printf.sprintf "Unable to parse UUID %s, VM ignored" v); Lwt.return_none
+      | Some uuid -> Lwt.return (Some uuid)
+  ) key_names
 
-let get_vm_dns_name_list t ~vm_name =
-  let path = [ "jitsu" ; "vm" ; vm_name ; "dns" ] in
+let get_vm_dns_name_list t ~vm_uuid =
+  let path = [ "jitsu" ; "vm" ; (Uuidm.to_string vm_uuid) ; "dns" ] in
   get_key_names t path >>= fun dns_names ->
   Lwt_list.map_s (fun name ->
       Lwt.return (Dns.Name.of_string name)
@@ -233,24 +235,24 @@ let get_vm_dns_name_list t ~vm_name =
 let create_dns_db t =
   let dns_db = Dns.Loader.new_db () in
   get_vm_list t >>= fun vm_list ->
-  Lwt_list.iter_s (fun vm_name ->
-      t.log (Printf.sprintf "create_dns_db: found vm %s" vm_name);
-      get_ip t ~vm_name >>= fun r ->
+  Lwt_list.iter_s (fun vm_uuid ->
+      t.log (Printf.sprintf "create_dns_db: found vm %s" (Uuidm.to_string vm_uuid));
+      get_ip t ~vm_uuid >>= fun r ->
       match r with
-      | None -> t.log (Printf.sprintf "create_dns_db: VM %s has no IP, skipping" vm_name); Lwt.return_unit
+      | None -> t.log (Printf.sprintf "create_dns_db: VM %s has no IP, skipping" (Uuidm.to_string vm_uuid)); Lwt.return_unit
       | Some ip ->
-        get_vm_dns_name_list t ~vm_name >>= fun dns_name_list ->
+        get_vm_dns_name_list t ~vm_uuid >>= fun dns_name_list ->
         Lwt_list.iter_s (fun dns_name ->
             let base_domain = Dns_helpers.get_base_domain dns_name in
             let answer = Dns_helpers.has_local_domain dns_db base_domain Dns.Packet.Q_SOA in
-            get_ttl t ~vm_name ~dns_name >>= fun ttl ->
+            get_ttl t ~vm_uuid ~dns_name >>= fun ttl ->
             if not answer then (
-              t.log (Printf.sprintf "Adding SOA '%s' with ttl=%d\n" (Dns.Name.to_string base_domain) ttl);
+              t.log (Printf.sprintf "create_dns_db: Adding SOA '%s' with ttl=%d" (Dns.Name.to_string base_domain) ttl);
               (* add soa if not registered before *) (* TODO use same ttl? *)
               Dns_helpers.add_soa dns_db base_domain ttl;
             );
             (* add dns record *)
-            t.log (Printf.sprintf "Adding A PTR for '%s' with ttl=%d and ip=%s\n" (Dns.Name.to_string dns_name) ttl (Ipaddr.V4.to_string ip));
+            t.log (Printf.sprintf "create_dns_db: Adding A PTR for '%s' with ttl=%d and ip=%s" (Dns.Name.to_string dns_name) ttl (Ipaddr.V4.to_string ip));
             Dns.Loader.add_a_rr ip (Int32.of_int ttl) dns_name dns_db;
             Lwt.return_unit
           ) dns_name_list

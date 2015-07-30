@@ -118,17 +118,17 @@ let vm_stop_mode =
 
 let synjitsu_domain_uuid =
   let doc =
-    "UUID or domain name of a Synjitsu compatible unikernel. When specified, \
+    "UUID of a running Synjitsu compatible unikernel. When specified, \
      Jitsu will attempt to connect to a Synjitsu unikernel over Vchan on port 'synjitsu' \
      and send notifications with updates on MAC- and IP-addresses of booted \
      unikernels. This allows Synjitsu to send gratuitous ARP on behalf of \
      booting unikernels and to cache incoming SYN packets until they are \
-     ready to receive them. This feature is experimental and requires a patched \
+     ready to receive them. This feature is $(b,experimental) and requires a patched \
      MirageOS TCP/IP stack."  in
-  Arg.(value & opt (some string) None & info ["synjitsu"] ~docv:"NAME_OR_UUID" ~doc)
+  Arg.(value & opt (some string) None & info ["synjitsu"] ~docv:"UUID" ~doc)
 
 let log m =
-  Printf.fprintf stdout "%s%!" m
+  Printf.fprintf stdout "%s\n%!" m
 
 let or_abort f =
   try f () with
@@ -153,7 +153,7 @@ let backend =
 
 
 let jitsu backend connstr bindaddr bindport forwarder forwardport response_delay
-    map_domain ttl vm_stop_mode use_synjitsu =
+    map_domain ttl vm_stop_mode synjitsu_domain_uuid =
   let (module B) =
     if backend = `Libvirt then
       (module Libvirt_backend : Backends.VM_BACKEND)
@@ -167,10 +167,11 @@ let jitsu backend connstr bindaddr bindport forwarder forwardport response_delay
   let module Jitsu = Jitsu.Make(B) in
   let rec maintenance_thread t timeout =
     Lwt_unix.sleep timeout >>= fun () ->
-    log ".";
+    Printf.printf "%s%!" ".";
     or_warn_lwt "Unable to stop expired VMs" (fun () -> Jitsu.stop_expired_vms t) >>= fun () ->
     maintenance_thread t timeout;
   in
+  Lwt.async_exception_hook := (fun exn -> log (Printf.sprintf "Exception in async thread: %s" (Printexc.to_string exn)));
   Lwt_main.run (
     ((match forwarder with
         | "" -> Dns_resolver_unix.create () >>= fun r -> (* use resolv.conf *)
@@ -183,13 +184,17 @@ let jitsu backend connstr bindaddr bindport forwarder forwardport response_delay
           Lwt.return (Some r)
       )
      >>= fun forward_resolver ->
-     log (Printf.sprintf "Connecting to %s...\n" connstr);
      let connstr = Uri.of_string connstr in
+     let synjitsu = 
+         match synjitsu_domain_uuid with
+         | Some s -> Uuidm.of_string s
+         | None -> None
+     in
      B.connect ~connstr () >>= fun r ->
      match r with
-     | `Error _ -> raise (Failure "Unable to connect to backend")
+     | `Error e -> raise (Failure (Printf.sprintf "Unable to connect to backend: %s" (Jitsu.string_of_error e)))
      | `Ok backend_t ->
-       or_abort (fun () -> Jitsu.create backend_t log forward_resolver ~use_synjitsu ()) >>= fun t ->
+       or_abort (fun () -> Jitsu.create backend_t log forward_resolver ~synjitsu ()) >>= fun t ->
        Lwt.choose [(
            (* main thread, DNS server *)
            let add_with_config config_array = (
@@ -200,23 +205,35 @@ let jitsu backend connstr bindaddr bindport forwarder forwardport response_delay
                 try
                   let v = (Hashtbl.find vm_config k) in
                   Printf.printf "%s\n" v; v
-                with Not_found -> log (Printf.sprintf "Missing command line key: %s\n" k); raise Not_found)
+                with Not_found -> log (Printf.sprintf "Missing command line key: %s" k); raise Not_found)
              in
              let dns_name = Dns.Name.of_string (get "dns") in
              let vm_name = get "name" in
              let vm_ip = Ipaddr.V4.of_string_exn (get "ip") in
-             log (Printf.sprintf "Adding domain '%s' for VM '%s' with ip %s\n" (Dns.Name.to_string dns_name) vm_name (Ipaddr.V4.to_string vm_ip));
-             or_abort (fun () -> Jitsu.add_vm t ~dns_names:[dns_name] ~vm_name ~vm_ip ~vm_stop_mode ~response_delay ~dns_ttl:ttl ~vm_config)
+             log (Printf.sprintf "Adding domain '%s' for VM '%s' with ip %s" (Dns.Name.to_string dns_name) vm_name (Ipaddr.V4.to_string vm_ip));
+             or_abort (fun () -> Jitsu.add_vm t ~dns_names:[dns_name] ~vm_ip ~vm_stop_mode ~response_delay ~dns_ttl:ttl ~vm_config)
            ) in
            Lwt_list.iter_p add_with_config map_domain
            >>= fun () ->
-           log (Printf.sprintf "Starting server on %s:%d...\n" bindaddr bindport);
-           let processor = ((Dns_server.processor_of_process (Jitsu.process t))
+           log (Printf.sprintf "Starting DNS server on %s:%d..." bindaddr bindport);
+           try_lwt 
+               let processor = ((Dns_server.processor_of_process (Jitsu.process t))
                             :> (module Dns_server.PROCESSOR)) in
-           Dns_server_unix.serve_with_processor ~address:bindaddr ~port:bindport
-             ~processor);
+               Dns_server_unix.serve_with_processor ~address:bindaddr ~port:bindport ~processor
+           with
+               | e -> log (Printf.sprintf "DNS thread exited unexpectedly with exception: %s" (Printexc.to_string e)); Lwt.return_unit
+           >>= fun () ->
+           log "DNS server no longer running. Exiting...";
+           Lwt.return_unit);
+
           (* maintenance thread, delay in seconds *)
-          (maintenance_thread t 5.0)]);
+          (try_lwt 
+               maintenance_thread t 5.0
+           with
+               | e -> log (Printf.sprintf "Maintenance thread exited unexpectedly with exception: %s" (Printexc.to_string e)); Lwt.return_unit
+           >>= fun () ->
+           log "Maintenance thread no longer running. Exiting..."; 
+           Lwt.return_unit)]);
   )
 
 let jitsu_t =

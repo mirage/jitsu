@@ -28,8 +28,9 @@ exception Invalid_config of string
 exception Mac_error of string
 
 type t = {
-  context : Xenlight.ctx;
-  log_f : (string -> unit);
+  context : Xenlight.ctx ref; (* Keep reference to prevent GC *)
+  logger  : Xentoollog.handle ref; (* Keep reference to prevent GC *)
+  log_f   : (string -> unit);
 }
 
 type vm = {
@@ -43,21 +44,36 @@ let bytes_of_int_array a =
       String.set s i (Char.chr v)) a;
   s
 
+let int_array_of_string a =
+  let s = Array.make (String.length a) 0 in
+  String.iteri (fun i v ->
+      Array.set s i (Char.code v)) a;
+  s
+
 let bytes_of_xen_uuid (uuid:(int array)) =
-  if ((Array.length uuid) = 15) then
+  if ((Array.length uuid) = 16) then
     begin
       (bytes_of_int_array uuid)
     end else
-    raise (Uuid_error (Printf.sprintf "wrong length %d (should be 15)" (Array.length uuid)))
+    raise (Uuid_error (Printf.sprintf "wrong length %d (should be 16)" (Array.length uuid)))
 
 let uuidm_of_xen_uuid uuid =
   Uuidm.of_bytes (bytes_of_xen_uuid uuid)
 
-let dominfo_to_vm dominfo =
+let xen_uuid_of_uuidm uuid =
+  let bytes = Uuidm.to_bytes uuid in
+   int_array_of_string bytes 
+
+let dominfo_to_uuid dominfo =
   let xen_uuid = dominfo.Xenlight.Dominfo.uuid in
   match (uuidm_of_xen_uuid xen_uuid) with
   | None -> raise (Uuid_error "uuidm couldn't parse xen uuid")
-  | Some uuid -> { uuid }
+  | Some uuid -> uuid
+
+let parse_uuid_exn uuid =
+    match (Uuidm.of_string uuid) with
+    | None -> raise (Invalid_config (Printf.sprintf "unable to parse UUID %s" uuid))
+    | Some uuid -> uuid
 
 let try_call msg f =
   try
@@ -81,18 +97,7 @@ let try_call msg f =
       Lwt.return (`Error error)
     end
 
-(* All libxl calls need one of these to say where the logs should go.
-   We delay the creation because it can fail (e.g. due to insufficient privileges)
-   and we would still like people to be able to consult command-line arguments *)
-let context log_f =
-  Xenlight.register_exceptions ();
-  Printexc.register_printer (function
-      | Xenlight.Error(error, msg) ->
-        Some (Printf.sprintf "Xenlight.Error(%s, %s)" (Xenlight.string_of_error error) msg)
-      | _ ->
-        None
-    );
-  let logger =
+let create_logger log_f () =
     let open Xentoollog in
     let vmessage _level errno ctx msg =
       let errno_str = match errno with None -> "" | Some s -> Printf.sprintf ": errno=%d" s
@@ -101,32 +106,43 @@ let context log_f =
     let progress _ctx what percent dne total =
       let nl = if dne = total then "\n" else "" in
       log_f (Printf.sprintf "\rProgress %s %d%% (%Ld/%Ld)%s" what percent dne total nl) in
-    create "Xentoollog.logger" { vmessage; progress } in
-  try
-    Xenlight.ctx_alloc logger
-  with e ->
-    log_f (Printf.sprintf "Unable to talk to Xen. Please check that:\n");
-    log_f (Printf.sprintf "- Xen is running (try cat /sys/hypervisor/type)\n");
-    log_f (Printf.sprintf "- xenfs is mounted\n");
-    log_f (Printf.sprintf "- Xenstore is running\n");
-    log_f (Printf.sprintf "- you have sufficient privileges\n");
-    log_f (Printf.sprintf "\nRaw error was: %s\n%!" (Printexc.to_string e));
-    exit 1 (* TODO: Handle this better? *)
+    create "Xentoollog.logger" { vmessage; progress }
+
+(* All libxl calls need one of these to say where the logs should go.
+   We delay the creation because it can fail (e.g. due to insufficient privileges)
+   and we would still like people to be able to consult command-line arguments *)
+let create_context logger () =
+  Xenlight.register_exceptions ();
+  Printexc.register_printer (function
+      | Xenlight.Error(error, msg) ->
+        Some (Printf.sprintf "Xenlight.Error(%s, %s)" (Xenlight.string_of_error error) msg)
+      | _ ->
+        None
+    );
+  Xenlight.ctx_alloc logger
 
 let default_log s =
   Printf.fprintf stderr "libxl_backend: %s" s
 
-let connect ?log_f:(log_f=default_log) ?connstr () =
-  match connstr with
-  | Some _ -> Lwt.return (`Error (`Unknown "Connect string not supported"))
-  | None -> try_call "Unable to connect" (fun () ->
-      Lwt.return (`Ok { context=(context log_f) ; log_f })
-    )
+let connect ?log_f:(log_f=default_log) ?connstr:(_) () =
+  try
+    let logger = create_logger log_f () in
+    let context = create_context logger () in
+    Lwt.return (`Ok { context = ref context ; logger = ref logger ; log_f })
+  with e ->
+    let error_msg = Printexc.to_string e in
+    log_f (Printf.sprintf "Unable to talk to Xen. Please check that:");
+    log_f (Printf.sprintf "- Xen is running (try cat /sys/hypervisor/type)");
+    log_f (Printf.sprintf "- xenfs is mounted");
+    log_f (Printf.sprintf "- Xenstore is running");
+    log_f (Printf.sprintf "- you have sufficient privileges");
+    Lwt.return (`Error (`Unable_to_connect (Printf.sprintf "Unable to connect to Xen/libxl. Error was: %s" error_msg)))
 
 (* Helper functions *)
 
 let lookup_vm_by_predicate t p =
-  let domains = List.filter p (Xenlight.Dominfo.list t.context) in
+  let context = !(t.context) in
+  let domains = List.filter p (Xenlight.Dominfo.list context) in
   match domains with
   | [hd] -> Some hd
   | _::_::_ -> raise (Lookup_error "Lookup returned more than one result (internal error)")
@@ -161,8 +177,8 @@ let safe_xs_read_by_domid domid key =
   | None -> Lwt.return_none
   | Some s -> Lwt.return (Some s)
 
-let safe_xs_read_by_vm t vm key =
-  match (get_dominfo_by_uuid t vm.uuid) with
+let safe_xs_read_by_vm t uuid key =
+  match (get_dominfo_by_uuid t uuid) with
   | None -> Lwt.return_none
   | Some dominfo -> safe_xs_read_by_domid (dominfo.Xenlight.Dominfo.domid) key
 
@@ -179,7 +195,7 @@ let blocking_xenlight f =
     raise e
 
 
-let domain_config t config =
+let domain_config t uuid config =
   let get_option key =
     try
       Some (Hashtbl.find config key)
@@ -193,7 +209,7 @@ let domain_config t config =
     | Not_found -> raise (Invalid_config (Printf.sprintf "Missing required config key %s" key))
   in
   let name = get_required "name" in
-  let memory_kb = Int64.of_string (get_required "mem") in
+  let memory = Int64.of_string (get_required "memory") in
   let kernel = get_required "kernel" in
   let cmdline = get_option "cmdline" in
   let scripts = (match (get_option "scripts") with
@@ -202,15 +218,15 @@ let domain_config t config =
   let nics = (match (get_option "nics") with
       | None -> []
       | Some s -> [s]) in (* TODO: Support list options *)
-  let context = t.context in
-  let c_info = Xenlight.Domain_create_info.({ (default context ()) with
+  let c_info = Xenlight.Domain_create_info.({ (default !(t.context) ()) with
                                               Xenlight.Domain_create_info.xl_type = Xenlight.DOMAIN_TYPE_PV;
+                                              uuid = (xen_uuid_of_uuidm uuid);
                                               name = Some name;
                                               run_hotplug_scripts = Some true;
                                             }) in
-  let b_info = Xenlight.Domain_build_info.({ (default context ~xl_type:Xenlight.DOMAIN_TYPE_PV ()) with
-                                             Xenlight.Domain_build_info.max_memkb = memory_kb;
-                                             target_memkb = memory_kb;
+  let b_info = Xenlight.Domain_build_info.({ (default !(t.context) ~xl_type:Xenlight.DOMAIN_TYPE_PV ()) with
+                                             max_memkb = memory;
+                                             target_memkb = memory;
                                            }) in
   let b_info_xl_type = match b_info.Xenlight.Domain_build_info.xl_type with
     | Xenlight.Domain_build_info.Pv x -> x
@@ -228,28 +244,27 @@ let domain_config t config =
     Array.init (Array.length n)
       (fun i -> let bridge = Some (Array.get n i) in
         let script = (match s with [||] -> None | scripts -> Some (Array.get scripts (i mod Array.length scripts))) in
-        Xenlight.Device_nic.({ (default context ()) with
+        Xenlight.Device_nic.({ (default !(t.context) ()) with
                                Xenlight.Device_nic.mtu = 1500;
                                script;
                                bridge;
                              })) in
-  Xenlight.Domain_config.({ (default context ()) with
+  Xenlight.Domain_config.({ (default !(t.context) ()) with
                             c_info;
                             b_info;
                             nics;
                           })
 
 (* Module signature implementations *)
-
-let lookup_vm_by_uuid t vm_uuid =
-  try_call "Unable lookup VM UUID" (fun () ->
-      match (get_dominfo_by_uuid t vm_uuid) with
-      | Some dominfo -> Lwt.return (`Ok (dominfo_to_vm dominfo))
-      | None -> Lwt.return (`Error `Not_found)
+let get_state t uuid =
+  try_call "Unable to get VM state" (fun () ->
+      match (get_dominfo_by_uuid t uuid) with
+      | None -> Lwt.return (`Ok Vm_state.Off) (* TODO Check suspended by checking if suspend filename is readable, see also https://github.com/mirage/jitsu/blob/dev/src/jitsu.ml#L150 *)
+      | Some _ -> Lwt.return (`Ok Vm_state.Running)
     )
 
 let lookup_vm_by_name t vm_name =
-  let domids = List.map (fun di -> di.Xenlight.Dominfo.domid) (Xenlight.Dominfo.list t.context) in
+  let domids = List.map (fun di -> di.Xenlight.Dominfo.domid) (Xenlight.Dominfo.list !(t.context)) in
   let rec loop = function
     | domid :: rest -> begin
         safe_xs_read_by_domid domid "name" >>= fun name ->
@@ -264,28 +279,21 @@ let lookup_vm_by_name t vm_name =
   loop domids >>= fun res ->
   match res with
   | None -> Lwt.return (`Error `Not_found)
-  | Some dominfo -> Lwt.return (`Ok (dominfo_to_vm dominfo))
+  | Some dominfo -> Lwt.return (`Ok (dominfo_to_uuid dominfo))
 
-let get_state t vm =
-  try_call "Unable to get VM state" (fun () ->
-      match (get_dominfo_by_uuid t vm.uuid) with
-      | None -> Lwt.return (`Ok Vm_state.Off) (* TODO Check suspended by checking if suspend filename is readable, see also https://github.com/mirage/jitsu/blob/dev/src/jitsu.ml#L150 *)
-      | Some _ -> Lwt.return (`Ok Vm_state.Running)
-    )
-
-let destroy_vm t vm =
+let destroy_vm t uuid =
   try_call "Unable to destroy VM" (fun () ->
-      match (get_dominfo_by_uuid t vm.uuid) with
+      match (get_dominfo_by_uuid t uuid) with
       | None -> Lwt.return (`Error `Not_found)
-      | Some dominfo -> Xenlight.Domain.destroy t.context dominfo.Xenlight.Dominfo.domid ();
+      | Some dominfo -> Xenlight.Domain.destroy !(t.context) dominfo.Xenlight.Dominfo.domid ();
         Lwt.return (`Ok ())
     )
 
-let shutdown_vm t vm =
+let shutdown_vm t uuid =
   try_call "Unable to shutdown VM" (fun () ->
-      match (get_dominfo_by_uuid t vm.uuid) with
+      match (get_dominfo_by_uuid t uuid) with
       | None -> Lwt.return (`Error `Not_found)
-      | Some dominfo -> Xenlight.Domain.shutdown t.context dominfo.Xenlight.Dominfo.domid;
+      | Some dominfo -> Xenlight.Domain.shutdown !(t.context) dominfo.Xenlight.Dominfo.domid;
         Lwt.return (`Ok ())
     )
 
@@ -297,28 +305,28 @@ let resume_vm _ _ =
   (* TODO Resume not supported - code may be adapted from https://github.com/mirage/jitsu/blob/dev/src/jitsu.ml#L271 *)
   Lwt.return (`Error `Not_supported)
 
-let pause_vm t vm =
+let pause_vm t uuid =
   try_call "Unable to pause VM" (fun () ->
-      match (get_dominfo_by_uuid t vm.uuid) with
+      match (get_dominfo_by_uuid t uuid) with
       | None -> Lwt.return (`Error `Not_found)
-      | Some dominfo -> Xenlight.Domain.pause t.context dominfo.Xenlight.Dominfo.domid;
+      | Some dominfo -> Xenlight.Domain.pause !(t.context) dominfo.Xenlight.Dominfo.domid;
         Lwt.return (`Ok ())
     )
 
-let unpause_vm t vm =
+let unpause_vm t uuid =
   try_call "Unable to unpause VM" (fun () ->
-      match (get_dominfo_by_uuid t vm.uuid) with
+      match (get_dominfo_by_uuid t uuid) with
       | None -> Lwt.return (`Error `Not_found)
-      | Some dominfo -> Xenlight.Domain.pause t.context dominfo.Xenlight.Dominfo.domid;
+      | Some dominfo -> Xenlight.Domain.pause !(t.context) dominfo.Xenlight.Dominfo.domid;
         Lwt.return (`Ok ())
     )
 
-let get_mac t vm =
+let get_mac t uuid =
   try_call "Unable to get MAC addresses for VM" (fun () ->
-      match (get_dominfo_by_uuid t vm.uuid) with
+      match (get_dominfo_by_uuid t uuid) with
       | None -> Lwt.return (`Error `Not_found)
       | Some dominfo -> begin
-          let nics = Xenlight.Device_nic.list t.context dominfo.Xenlight.Dominfo.domid in
+          let nics = Xenlight.Device_nic.list !(t.context) dominfo.Xenlight.Dominfo.domid in
           let macs = List.map (fun v ->
               let xen_mac = (bytes_of_int_array v.Xenlight.Device_nic.mac) in
               let mac = Macaddr.of_bytes xen_mac in
@@ -329,40 +337,57 @@ let get_mac t vm =
         end
     )
 
-let start_vm t _ config =
+let start_vm t uuid config =
   try_call "Unable to start VM" (fun () ->
       blocking_xenlight (fun () ->
           try
-            let domid = Xenlight.Domain.create_new t.context (domain_config t config) () in
-            Lwt.return (`Ok (Xenlight.Domain.unpause t.context domid))
+            let domid = Xenlight.Domain.create_new !(t.context) (domain_config t uuid config) () in
+            Lwt.return (`Ok (Xenlight.Domain.unpause !(t.context) domid))
           with
             e -> Lwt.return (`Error (`Unknown (Printf.sprintf "Create failed with: %s.\n%!" (Printexc.to_string e))))
         )
     )
 
-let get_uuid _ vm =
-  Lwt.return (`Ok vm.uuid)
+let get_name t uuid =
+  get_state t uuid >>= fun vm_state ->
+  match vm_state with
+  | `Ok Vm_state.Running -> begin
+      try_call "Unable to get VM name" (fun () ->
+          safe_xs_read_by_vm t uuid "name" >>= function
+          | Some n -> Lwt.return (`Ok (Some n))
+          | None -> Lwt.return (`Error `Not_found)
+        )
+  end
+  | `Ok _ -> Lwt.return (`Ok None)
+  | `Error e -> Lwt.return (`Error e)
 
-let get_name t vm =
-  try_call "Unable to get VM name" (fun () ->
-      safe_xs_read_by_vm t vm "name" >>= function
-      | Some n -> Lwt.return (`Ok n)
-      | None -> Lwt.return (`Error `Not_found)
-    )
-
-let get_domain_id t vm =
+let get_domain_id t uuid =
   try_call "Unable to get VM dom id" (fun () ->
-      match (get_dominfo_by_uuid t vm.uuid) with
+      match (get_dominfo_by_uuid t uuid) with
       | None -> Lwt.return (`Error `Not_found)
       | Some n -> Lwt.return (`Ok (n.Xenlight.Dominfo.domid))
     )
+
+let configure_vm _ config =
+  try_call "Unable to get or create VM UUID" (fun () ->
+    let get key =
+        try
+          Some (Hashtbl.find config key)
+        with
+          | Not_found -> None
+    in
+    match (get "uuid") with
+    | None -> Lwt.return (`Ok (Uuidm.create `V4))
+    | Some s -> Lwt.return (`Ok (parse_uuid_exn s))
+  )
+  
 
 let get_config_option_list =
   [ ("name", "Name of created VM (required)") ;
     ("dns", "DNS name (required)") ;
     ("ip", "IP to return in DNS reply (required)");
     ("kernel", "VM kernel file name (required)") ;
-    ("mem", "VM memory in kb (required)") ;
+    ("memory", "VM memory in bytes (required)") ;
     ("cmdline", "Extra parameters passed to kernel (optional)") ;
     ("nics", "Network devices (br0, eth0 etc) (optional, only one supported)") ;
     ("scripts", "VIF script(s) (optional, only one supported)") ]

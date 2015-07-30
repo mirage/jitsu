@@ -30,7 +30,7 @@ module Make :
     type t
     (** The type of Jitsu states. *)
 
-    val create: Backend.t -> (string -> unit) -> Dns_resolver_unix.t option -> ?use_synjitsu:(string option) -> unit -> t Lwt.t
+    val create: Backend.t -> (string -> unit) -> Dns_resolver_unix.t option -> ?synjitsu:(Uuidm.t option) -> unit -> t Lwt.t
     (** [create backend log_function resolver vm_count use_synjitsu] creates a new Jitsu instance,
         where vm_count is the initial size of the hash table and use_synjitsu is the optional
         name or uuid of a synjitsu unikernel. *)
@@ -40,7 +40,7 @@ module Make :
         forwards request to a fallback resolver *)
 
     val add_vm: t ->
-      vm_name:string -> vm_ip:Ipaddr.V4.t -> vm_stop_mode:Vm_stop_mode.t ->
+      vm_ip:Ipaddr.V4.t -> vm_stop_mode:Vm_stop_mode.t ->
       dns_names:(Dns.Name.t list) -> dns_ttl:int ->
       response_delay:float ->
       vm_config:(string, string) Hashtbl.t ->
@@ -51,4 +51,8 @@ module Make :
     val stop_expired_vms: t -> unit Lwt.t
     (** Iterate through the internal VM table and stop VMs that haven't
         received requests for more than [ttl*2] seconds. *)
+
+    val string_of_error: Backends.error -> string
+    (** Convert backend error to string *)
+
   end
