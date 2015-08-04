@@ -6,8 +6,9 @@ build: [
   [make]
 ]
 depends: [  "lwt" 
-            "dns"  { >= "0.15.0" }
-            "irmin-unix"
+            "dns"  { >= "0.15.3" }
+            "xenstore"
+            "xenstore_transport"
             "cmdliner" 
             "libvirt" 
             "ipaddr"
@@ -15,11 +16,12 @@ depends: [  "lwt"
             "conduit"
             "vchan"
             "uuidm"
-            "irmin-unix" { >= "0.9.7" }
+            "irmin-unix"
+            "irmin" { >= "0.9.7" }
             "xen-api-client" 
             "xenctrl" ]
 depexts: [
-  [["debian"] ["libvirt-bin" "libvirt-dev"]]
-  [["ubuntu"] ["libvirt-bin" "libvirt-dev"]]
+  [["debian"] ["libvirt-bin" "libvirt-dev" "libxen-dev"]]
+  [["ubuntu"] ["libvirt-bin" "libvirt-dev" "libxen-dev"]]
   [["osx" "homebrew"] ["libvirt"]]
 ]
