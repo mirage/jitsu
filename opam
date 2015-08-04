@@ -15,7 +15,7 @@ depends: [  "lwt"
             "conduit"
             "vchan"
             "uuidm"
-            "irmin_unix" { >= "0.9.7" }
+            "irmin-unix" { >= "0.9.7" }
             "xen-api-client" 
             "xenctrl" ]
 depexts: [
