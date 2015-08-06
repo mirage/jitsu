@@ -342,7 +342,17 @@ let start_vm t uuid config =
       blocking_xenlight (fun () ->
           try
             let domid = Xenlight.Domain.create_new !(t.context) (domain_config t uuid config) () in
-            Lwt.return (`Ok (Xenlight.Domain.unpause !(t.context) domid))
+            let rump_config = try
+                                Some (Hashtbl.find config "rump_config")
+                              with
+                                | Not_found -> None
+            in
+            (match rump_config with
+            | Some file -> Rump.configure_from_file ~domid ~file 
+            | None -> Lwt.return `Ok) 
+            >>= function
+            | `Ok -> Lwt.return (`Ok (Xenlight.Domain.unpause !(t.context) domid))
+            | `Error e -> Lwt.return (`Error (`Unknown e))
           with
             e -> Lwt.return (`Error (`Unknown (Printf.sprintf "Create failed with: %s.\n%!" (Printexc.to_string e))))
         )
@@ -390,4 +400,6 @@ let get_config_option_list =
     ("memory", "VM memory in bytes (required)") ;
     ("cmdline", "Extra parameters passed to kernel (optional)") ;
     ("nics", "Network devices (br0, eth0 etc) (optional, only one supported)") ;
-    ("scripts", "VIF script(s) (optional, only one supported)") ]
+    ("scripts", "VIF script(s) (optional, only one supported)") ;
+    ("rump_config", "Path to file with rump kernel JSON config (optional)") ;
+  ]

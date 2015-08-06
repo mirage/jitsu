@@ -43,7 +43,6 @@ let connect ?log_f:(log_f=default_log) ?connstr () =
       { connection = Libvirt.Connect.connect ~name:(Uri.to_string uri) () ; log_f }
     )
 
-
 (* convert vm state to string *)
 let libvirt_state_to_vm_state = function
   | Libvirt.Domain.InfoNoState
