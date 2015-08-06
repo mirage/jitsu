@@ -34,11 +34,11 @@ You should now be able to install Jitsu as usual.
 
 ## Getting started ##
 
-Jitsu is initialy launched with a list of unikernels, their configurations and a set of parameters that define 
+Jitsu is initially launched with a list of unikernels, their configurations and a set of parameters that define 
 
-a) how to connect to the virtualisation backend, 
-b) how the DNS server should behave, 
-c) how the unikernels should be managed.
+ - how to connect to the virtualization backend
+ - how the DNS server should be configured
+ - how the unikernels should be managed
 
 A minimal Jitsu configuration could look like this:
 
@@ -46,15 +46,9 @@ A minimal Jitsu configuration could look like this:
 sudo ./jitsu dns=www.openmirage.org,ip=192.168.0.22,name=mirage-www -c xen:///
 ```
 
-The command above connects to a local Xen-server (from dom0) through libvirt (the default) and starts the DNS server. Requests for www.openmirage.org will be redirected to the Xen-VM called "mirage-www" with IP 192.168.0.22. If "mirage-www" is not running, jitsu will start it automatically before responding to the DNS request.
+The command above connects to a local Xen-server (from dom0) through libvirt (the default) and starts the DNS server. Requests for www.openmirage.org will be redirected to the Xen-VM called "mirage-www" with IP 192.168.0.22. If "mirage-www" is not running, Jitsu will start it automatically before responding to the DNS request.
 
-Each unikernel is configured using a set of key/value pairs separated by commas. The parameters that are supported depends on which backend (libvirt, xapi or libxl) is used to control the unikernels. See [below](#options) or run ./jitsu --help for a complete set of options.
-
-### Example: Boot a static MirageOS web site as a Xen unikernel ###
-
-### Example: Boot a rump kernel in Xen ###
-
-### Example: Boot a rump kernel in Virtualbox ###
+Each unikernel is configured using a set of key/value pairs separated by commas. The parameters that are supported depends on which virtualization backend (libvirt, xapi or libxl) is used to control the unikernels. See [below](#options) or run ./jitsu --help for a complete set of options.
 
 ### Example: Suspend/resume Linux VMs in Virtualbox ###
 Jitsu can be used to control VMs in Virtualbox with libvirt. Note that how well this will work depends on how quickly the VM is able to respond to requests after resuming from suspend (see also the `-d` parameter for how to delay the DNS response).
@@ -74,7 +68,7 @@ virsh # list --all
  2     Ubuntu                         running
 ```
 
-If virsh is unable to connect to Virtualbox, you may have to adjust the connection URI (`-c [uri]`). The default connection URI for Virtualbox is vbox:///session - see [this page](https://libvirt.org/remote.html) for more details. I had to set the socket manually in OS X, which can be done with 'vbox:///session?socket=path-to-socket'. Remember to use the same connection URI for Jitsu below.
+If virsh is unable to connect to Virtualbox, you may have to adjust the connection URI (`-c [uri]`). The default connection URI for Virtualbox is vbox:///session - see [this page](https://libvirt.org/remote.html) for more details. In OS X you may have to set the socket manually, which can be done with 'vbox:///session?socket=path-to-socket'. Remember to use the same connection URI for Jitsu below.
 
 You should now be able to start Jitsu. Use '-m suspend' to set it to suspend the VM on inactivity. Example output:
 
