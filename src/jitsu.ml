@@ -30,7 +30,7 @@ module Make (Vm_backend : Backends.VM_BACKEND) = struct
     synjitsu : Synjitsu.t option;
   }
 
-  let create vm_backend log forward_resolver ?synjitsu:(synjitsu=None) () =
+  let create vm_backend log forward_resolver ?synjitsu:(synjitsu=None) ?persistdb:(persistdb=None) () =
     (* initialise synjitsu *)
     let synjitsu_logger s = log (Printf.sprintf "synjitsu: %s" s) in
     let synjitsu = match synjitsu with
@@ -40,7 +40,10 @@ module Make (Vm_backend : Backends.VM_BACKEND) = struct
       | None -> None
     in
     let irmin_logger s = log (Printf.sprintf "irmin_backend: %s" s) in
-    Irmin_backend.create ~persist:false ~root:"/tmp/jitsu" ~log:irmin_logger () >>= fun storage ->
+    (match persistdb with
+     | None -> Irmin_backend.create ~persist:false ~root:"/tmp/jitsu" ~log:irmin_logger ()
+     | Some path -> Irmin_backend.create ~persist:true ~root:path ~log:irmin_logger ())
+    >>= fun storage ->
     Lwt.return {
       dns_db = Loader.new_db ();
       storage;

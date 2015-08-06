@@ -127,6 +127,13 @@ let synjitsu_domain_uuid =
      MirageOS TCP/IP stack."  in
   Arg.(value & opt (some string) None & info ["synjitsu"] ~docv:"UUID" ~doc)
 
+let persistdb =
+  let doc =
+    "Store the Irmin database in the specified path. The default is to store the database in memory only. \
+     Note that modifying this database while Jitsu is running is currently unsupported and may crash Jitsu
+     or have other unexpected results." in
+  Arg.(value & opt (some string) None & info [ "persistdb" ] ~docv:"path" ~doc)
+
 let log m =
   Printf.fprintf stdout "%s\n%!" m
 
@@ -153,7 +160,7 @@ let backend =
 
 
 let jitsu backend connstr bindaddr bindport forwarder forwardport response_delay
-    map_domain ttl vm_stop_mode synjitsu_domain_uuid =
+    map_domain ttl vm_stop_mode synjitsu_domain_uuid persistdb =
   let (module B) =
     if backend = `Libvirt then
       (module Libvirt_backend : Backends.VM_BACKEND)
@@ -194,7 +201,7 @@ let jitsu backend connstr bindaddr bindport forwarder forwardport response_delay
      match r with
      | `Error e -> raise (Failure (Printf.sprintf "Unable to connect to backend: %s" (Jitsu.string_of_error e)))
      | `Ok backend_t ->
-       or_abort (fun () -> Jitsu.create backend_t log forward_resolver ~synjitsu ()) >>= fun t ->
+       or_abort (fun () -> Jitsu.create backend_t log forward_resolver ~synjitsu ~persistdb ()) >>= fun t ->
        Lwt.choose [(
            (* main thread, DNS server *)
            let add_with_config config_array = (
@@ -238,7 +245,7 @@ let jitsu backend connstr bindaddr bindport forwarder forwardport response_delay
 
 let jitsu_t =
   Term.(pure jitsu $ backend $ connstr $ bindaddr $ bindport $ forwarder $ forwardport
-        $ response_delay $ map_domain $ ttl $ vm_stop_mode $ synjitsu_domain_uuid )
+        $ response_delay $ map_domain $ ttl $ vm_stop_mode $ synjitsu_domain_uuid $ persistdb )
 
 let () =
   match Term.eval (jitsu_t, info) with

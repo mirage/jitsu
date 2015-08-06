@@ -30,7 +30,7 @@ module Make :
     type t
     (** The type of Jitsu states. *)
 
-    val create: Backend.t -> (string -> unit) -> Dns_resolver_unix.t option -> ?synjitsu:(Uuidm.t option) -> unit -> t Lwt.t
+    val create: Backend.t -> (string -> unit) -> Dns_resolver_unix.t option -> ?synjitsu:(Uuidm.t option) -> ?persistdb:(string option) -> unit -> t Lwt.t
     (** [create backend log_function resolver vm_count use_synjitsu] creates a new Jitsu instance,
         where vm_count is the initial size of the hash table and use_synjitsu is the optional
         name or uuid of a synjitsu unikernel. *)
