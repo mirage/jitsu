@@ -1,5 +1,6 @@
 PKG libvirt
 PKG lwt
+PKG dns
 PKG dns.lwt
 PKG cmdliner
 PKG ezxmlm
@@ -7,5 +8,14 @@ PKG ipaddr
 PKG cstruct
 PKG conduit
 PKG vchan
+PKG irmin
+PKG xenstore
+PKG xenstore_transport
+PKG xenlight
+PKG uuidm
+PKG xen-api-client
 
-S lwt
+EXT lwt
+
+S src
+B bin

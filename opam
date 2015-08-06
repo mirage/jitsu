@@ -1,19 +1,27 @@
 opam-version: "1.2"
 name: "jitsu"
 maintainer: "Magnus Skjegstad <magnus@skjegstad.com>"
+authors: "Magnus Skjegstad <magnus@skjegstad.com>"
 build: [
   [make]
 ]
 depends: [  "lwt" 
-            "dns"  { >= "0.15.0" }
+            "dns"  { >= "0.15.3" }
+            "xenstore"
+            "xenstore_transport"
             "cmdliner" 
             "libvirt" 
             "ipaddr"
             "ezxmlm" 
             "conduit"
-            "vchan" ]
+            "vchan"
+            "uuidm"
+            "irmin-unix"
+            "irmin" { >= "0.9.7" }
+            "xen-api-client" 
+            "xenctrl" ]
 depexts: [
-  [["debian"] ["libvirt-bin" "libvirt-dev"]]
-  [["ubuntu"] ["libvirt-bin" "libvirt-dev"]]
+  [["debian"] ["libvirt-bin" "libvirt-dev" "libxen-dev"]]
+  [["ubuntu"] ["libvirt-bin" "libvirt-dev" "libxen-dev"]]
   [["osx" "homebrew"] ["libvirt"]]
 ]
