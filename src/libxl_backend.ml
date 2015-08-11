@@ -232,10 +232,20 @@ let domain_config t ~uuid ~name ~kernel ~memory ?cmdline:(cmdline=None) ?scripts
                                 script;
                                 bridge;
                               })) in
+  let disks =
+    let disks = Array.of_list disks in
+    Array.init (Array.length disks)
+      (fun i ->
+         let pdev_path,vdev = (Array.get disks i) in
+         Xenlight.Device_disk.({ (default !(t.context) ()) with
+                                 pdev_path;
+                                 vdev
+                               })) in
   Xenlight.Domain_config.({ (default !(t.context) ()) with
                             c_info;
                             b_info;
                             nics;
+                            disks
                           })
 
 (* Module signature implementations *)
@@ -329,12 +339,17 @@ let start_vm t uuid config =
             let memory = Options.get_int config "memory" in
             let cmdline = Options.(optional (get_str config "cmdline")) in
             let scripts = (
-              let lst = Options.(optional (get_str_list config "scripts")) in
+              let lst = Options.(optional (get_str_list config "script")) in
               match lst with
               | None -> []
               | Some s -> s) in
             let nics = (
-              let lst = Options.(optional (get_str_list config "nics")) in
+              let lst = Options.(optional (get_str_list config "nic")) in
+              match lst with
+              | None -> []
+              | Some s -> s) in
+            let disks = (
+              let lst = Options.(optional (get_str_tuple_list config "disk")) in
               match lst with
               | None -> []
               | Some s -> s) in
@@ -344,7 +359,7 @@ let start_vm t uuid config =
             | _,`Error e,_
             | _,_,`Error e -> raise (Invalid_config (Options.string_of_error e))
             | `Ok name,`Ok kernel,`Ok memory -> begin
-                let domconfig = domain_config t ~uuid ~name ~kernel ~memory ~cmdline ~scripts ~nics () in
+                let domconfig = domain_config t ~uuid ~name ~kernel ~memory ~cmdline ~scripts ~nics ~disks () in
                 let domid = Xenlight.Domain.create_new !(t.context) domconfig () in
                 (match rump_config with
                  | Some file -> Rump.configure_from_file ~domid ~file
@@ -398,7 +413,8 @@ let get_config_option_list =
     ("kernel", "VM kernel file name (required)") ;
     ("memory", "VM memory in bytes (required)") ;
     ("cmdline", "Extra parameters passed to kernel (optional)") ;
-    ("nics", "Network devices (br0, eth0 etc) (optional, only one supported)") ;
-    ("scripts", "VIF script(s) (optional, only one supported)") ;
+    ("nic", "Network device (br0, eth0 etc). Can be set more than once to configure multiple NICs (optional)") ;
+    ("script", "Virtual interface (VIF) configuration script. Can be set more than once to specify a VIF script per network device (optional)") ;
+    ("disk", "Disk to connect to the Xen VM. Format '[dom0 device/file]:[hdX/xvdX/sdX etc]'. Can be set more than once to configure multiple disks (optional)") ;
     ("rump_config", "Path to file with rump kernel JSON config (optional)") ;
   ]
