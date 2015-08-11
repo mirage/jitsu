@@ -64,28 +64,22 @@ let configure_vm t config =
      - Fails if uuid is missing and unable to lookup name
      - Fails if uuid is specified and unable to lookup uuid *)
   try_libvirt "Unable to configure VM" (fun () ->
-      let get p =
-        try
-          Some (Hashtbl.find config p)
-        with
-        | Not_found -> None
-      in
-      match (get "uuid") with
-      | Some uuid -> begin (* uuid set, parse and check *)
+      let uuid = Options.get_str config "uuid" in
+      let name = Options.get_str config "name" in
+      match uuid,name with
+      | `Ok uuid,_ -> begin (* uuid set, parse and check *)
           let uuidm = parse_uuid_exn uuid in
           let domain = Libvirt.Domain.lookup_by_uuid t.connection (Uuidm.to_bytes uuidm) in
           let uuidb = Libvirt.Domain.get_uuid_string domain in
           parse_uuid_exn uuidb
         end
-      | None -> begin (* uuid not set, try to lookup name *)
-          match (get "name") with
-          | None -> raise (Invalid_config "uuid or name has to be set")
-          | Some name -> begin
-              let domain = Libvirt.Domain.lookup_by_name t.connection name in
-              let uuid = parse_uuid_exn (Libvirt.Domain.get_uuid_string domain) in
-              uuid
-            end
+      | `Error `Required_key_not_found _,`Ok name -> begin (* uuid not set, try to lookup name *)
+          let domain = Libvirt.Domain.lookup_by_name t.connection name in
+          let uuid = parse_uuid_exn (Libvirt.Domain.get_uuid_string domain) in
+          uuid
         end
+      | `Error `Required_key_not_found _,`Error e -> raise (Invalid_config (Printf.sprintf "Error reading name: %s" (Options.string_of_error e)))
+      | `Error e, _ -> raise (Invalid_config (Printf.sprintf "Error reading UUID: %s" (Options.string_of_error e)))
     )
 
 let lookup_vm_by_name t name =

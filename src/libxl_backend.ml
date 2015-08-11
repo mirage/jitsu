@@ -194,8 +194,7 @@ let blocking_xenlight f =
     Sys.set_signal Sys.sigchld old_handler;
     raise e
 
-
-let domain_config t ~uuid ~name ~kernel ~memory ?cmdline:(cmdline=None) ?scripts:(scripts=[]) ?nics:(nics=[]) () =
+let domain_config t ~uuid ~name ~kernel ~memory ?cmdline:(cmdline=None) ?scripts:(scripts=[]) ?nics:(nics=[]) ?disks:(disks=[]) () =
   let c_info = Xenlight.Domain_create_info.({ (default !(t.context) ()) with
                                               Xenlight.Domain_create_info.xl_type = Xenlight.DOMAIN_TYPE_PV;
                                               uuid = (xen_uuid_of_uuidm uuid);
@@ -206,7 +205,8 @@ let domain_config t ~uuid ~name ~kernel ~memory ?cmdline:(cmdline=None) ?scripts
                                              max_memkb = Int64.of_int memory;
                                              target_memkb = Int64.of_int memory;
                                            }) in
-  let b_info_xl_type = match b_info.Xenlight.Domain_build_info.xl_type with
+  let b_info_xl_type =
+    match b_info.Xenlight.Domain_build_info.xl_type with
     | Xenlight.Domain_build_info.Pv x -> x
     | _ -> assert false in
   let b_info = Xenlight.Domain_build_info.({ b_info with
@@ -220,13 +220,18 @@ let domain_config t ~uuid ~name ~kernel ~memory ?cmdline:(cmdline=None) ?scripts
     let s = Array.of_list scripts in
     let n = Array.of_list nics in
     Array.init (Array.length n)
-      (fun i -> let bridge = Some (Array.get n i) in
-        let script = (match s with [||] -> None | scripts -> Some (Array.get scripts (i mod Array.length scripts))) in
-        Xenlight.Device_nic.({ (default !(t.context) ()) with
-                               Xenlight.Device_nic.mtu = 1500;
-                               script;
-                               bridge;
-                             })) in
+      (fun i ->
+         let bridge = Some (Array.get n i) in
+         let script = begin
+           match s with
+           | [||] -> None
+           | scripts -> Some (Array.get scripts (i mod Array.length scripts))
+         end in
+         Xenlight.Device_nic.({ (default !(t.context) ()) with
+                                Xenlight.Device_nic.mtu = 1500;
+                                script;
+                                bridge;
+                              })) in
   Xenlight.Domain_config.({ (default !(t.context) ()) with
                             c_info;
                             b_info;
@@ -385,7 +390,6 @@ let configure_vm _ config =
       | None -> Lwt.return (`Ok (Uuidm.create `V4))
       | Some s -> Lwt.return (`Ok (parse_uuid_exn s))
     )
-
 
 let get_config_option_list =
   [ ("name", "Name of created VM (required)") ;

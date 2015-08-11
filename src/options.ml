@@ -20,8 +20,8 @@ exception Invalid_value of string
 
 let string_of_error = function
   | `Required_key_not_found s -> (Printf.sprintf "Required key not found: %s" s)
-  | `Invalid_value s -> (Printf.sprintf "%s" s)
-  | `Invalid_format s -> (Printf.sprintf "%s" s)
+  | `Invalid_value s -> (Printf.sprintf "Invalid value: %s" s)
+  | `Invalid_format s -> (Printf.sprintf "Invalid format: %s" s)
 
 let get config key parse_fn =
   try
@@ -50,13 +50,13 @@ let int_of_string_exn v key_name =
     let i64 = Int64.of_string v in
     (Int64.to_int i64)
   with
-  | Failure _ -> raise (Failure (Printf.sprintf "%s: Invalid format '%s'. Int expected." key_name v))
+  | Failure _ -> raise (Failure (Printf.sprintf "%s: '%s'. Int expected." key_name v))
 
 let float_of_string_exn v key_name =
   try
     (float_of_string v)
   with
-  | Failure _ -> raise (Failure (Printf.sprintf "%s: Invalid format '%s'. Float expected." key_name v))
+  | Failure _ -> raise (Failure (Printf.sprintf "%s: '%s'. Float expected." key_name v))
 
 let ipaddr_of_string_exn v key_name =
   try
@@ -68,15 +68,15 @@ let dns_name_of_string_exn v key_name =
   try
     (Dns.Name.of_string v)
   with
-  | Dns.Name.BadDomainName _ -> raise (Failure (Printf.sprintf "%s: Invalid format '%s'. Domain name expected." key_name v))
+  | Dns.Name.BadDomainName _ -> raise (Failure (Printf.sprintf "%s: '%s'. Domain name expected." key_name v))
 
 let file_name_of_string_exn v key_name =
   let exists = Sys.file_exists v in
   let dir = Sys.is_directory v in
   match exists, dir with
   | true, false -> v
-  | true, true -> raise (Invalid_value (Printf.sprintf "%s: Invalid value '%s'. Kernel must be a file, not a directory." key_name v))
-  | false, _ -> raise (Invalid_value (Printf.sprintf "%s: Invalid value '%s'. File does not exist." key_name v))
+  | true, true -> raise (Invalid_value (Printf.sprintf "%s: '%s'. Kernel must be a file, not a directory." key_name v))
+  | false, _ -> raise (Invalid_value (Printf.sprintf "%s: '%s'. File does not exist." key_name v))
 
 let get_str config key =
   get config key (fun s _ -> s)
