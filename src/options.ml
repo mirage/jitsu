@@ -41,6 +41,25 @@ let get_list config key parse_fn =
   | Invalid_format s -> (`Error (`Invalid_format s))
   | Not_found -> (`Error (`Required_key_not_found key))
 
+let get_tuple_list config key ?sep:(sep=':') parsel_fn parser_fn =
+  try
+    let lst = Hashtbl.find_all config key in
+    `Ok (List.map (fun v ->
+        try
+          let sep_pos = String.index v sep in
+          let left = String.sub v 0 sep_pos in
+          if (sep_pos+1 = String.length v) then (* right side is empty *)
+            ((Some (parsel_fn left key)), None)
+          else
+            let right = String.sub v (sep_pos+1) ((String.length v) - sep_pos) in
+            (Some (parsel_fn left key), Some (parser_fn right key))
+        with
+        | Not_found -> (Some (parsel_fn v key), None)) lst)
+  with
+  | Invalid_value s -> (`Error (`Invalid_value s))
+  | Invalid_format s -> (`Error (`Invalid_format s))
+  | Not_found -> (`Error (`Required_key_not_found key))
+
 let optional = function
   | `Ok v -> Some v
   | `Error _ -> None
@@ -83,6 +102,9 @@ let get_str config key =
 
 let get_str_list config key =
   get_list config key (fun s _ -> s)
+
+let get_str_tuple_list config key =
+  get_tuple_list config key (fun s _ -> s) (fun s _ -> s)
 
 let get_ipaddr config key =
   get config key ipaddr_of_string_exn
