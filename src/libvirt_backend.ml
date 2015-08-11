@@ -35,13 +35,13 @@ let default_log s =
 let connect ?log_f:(log_f=default_log) ?connstr () =
   match connstr with
   | None -> Lwt.return (`Error (`Unable_to_connect "Empty connect string"))
-  | Some uri -> 
-    let error_msg = 
-        Printf.sprintf "Unable to connect to Libvirt backend. Verify that the connect string is correct (%s) and that you have the right permissions." (Uri.to_string uri)
+  | Some uri ->
+    let error_msg =
+      Printf.sprintf "Unable to connect to Libvirt backend. Verify that the connect string is correct (%s) and that you have the right permissions." (Uri.to_string uri)
     in
     try_libvirt error_msg (fun () ->
-      { connection = Libvirt.Connect.connect ~name:(Uri.to_string uri) () ; log_f }
-    )
+        { connection = Libvirt.Connect.connect ~name:(Uri.to_string uri) () ; log_f }
+      )
 
 (* convert vm state to string *)
 let libvirt_state_to_vm_state = function
@@ -54,45 +54,45 @@ let libvirt_state_to_vm_state = function
   | Libvirt.Domain.InfoShutoff -> Vm_state.Off
 
 let parse_uuid_exn uuid =
-    match (Uuidm.of_string uuid) with
-    | None -> raise (Invalid_config (Printf.sprintf "unable to parse UUID %s" uuid))
-    | Some uuid -> uuid
+  match (Uuidm.of_string uuid) with
+  | None -> raise (Invalid_config (Printf.sprintf "unable to parse UUID %s" uuid))
+  | Some uuid -> uuid
 
 let configure_vm t config =
   (* Tries to find the UUID for the VM config
-   - Fails if both name and uuid are missing
-   - Fails if uuid is missing and unable to lookup name
-   - Fails if uuid is specified and unable to lookup uuid *)
+     - Fails if both name and uuid are missing
+     - Fails if uuid is missing and unable to lookup name
+     - Fails if uuid is specified and unable to lookup uuid *)
   try_libvirt "Unable to configure VM" (fun () ->
       let get p =
-          try 
-              Some (Hashtbl.find config p)
-          with
-          | Not_found -> None
-      in 
+        try
+          Some (Hashtbl.find config p)
+        with
+        | Not_found -> None
+      in
       match (get "uuid") with
       | Some uuid -> begin (* uuid set, parse and check *)
           let uuidm = parse_uuid_exn uuid in
           let domain = Libvirt.Domain.lookup_by_uuid t.connection (Uuidm.to_bytes uuidm) in
-          let uuidb = Libvirt.Domain.get_uuid_string domain in 
+          let uuidb = Libvirt.Domain.get_uuid_string domain in
           parse_uuid_exn uuidb
         end
       | None -> begin (* uuid not set, try to lookup name *)
           match (get "name") with
           | None -> raise (Invalid_config "uuid or name has to be set")
           | Some name -> begin
-               let domain = Libvirt.Domain.lookup_by_name t.connection name in
-               let uuid = parse_uuid_exn (Libvirt.Domain.get_uuid_string domain) in
-               uuid
-          end
-        end 
-  )
+              let domain = Libvirt.Domain.lookup_by_name t.connection name in
+              let uuid = parse_uuid_exn (Libvirt.Domain.get_uuid_string domain) in
+              uuid
+            end
+        end
+    )
 
 let lookup_vm_by_name t name =
   try_libvirt "Unable lookup VM name" (fun () ->
       let domain = Libvirt.Domain.lookup_by_name t.connection name in
       let uuid = Libvirt.Domain.get_uuid_string domain in
-      parse_uuid_exn uuid 
+      parse_uuid_exn uuid
     )
 
 let get_state t uuid =

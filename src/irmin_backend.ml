@@ -223,7 +223,7 @@ let get_vm_list t =
       match (Uuidm.of_string v) with
       | None -> t.log (Printf.sprintf "Unable to parse UUID %s, VM ignored" v); Lwt.return_none
       | Some uuid -> Lwt.return (Some uuid)
-  ) key_names
+    ) key_names
 
 let get_vm_dns_name_list t ~vm_uuid =
   let path = [ "jitsu" ; "vm" ; (Uuidm.to_string vm_uuid) ; "dns" ] in

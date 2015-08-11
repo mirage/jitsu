@@ -27,10 +27,10 @@ let configure ~domid ~config =
   Xs.(immediate xsc (fun h ->
       safe_write h path config
     ))
-    
+
 let configure_from_file ~domid ~file =
-  Lwt.catch 
-          (fun () -> let stream = Lwt_io.chars_of_file file in
-                     Lwt_stream.to_string stream >>= fun config ->
-                     configure ~domid ~config)
-          (function Unix.Unix_error (error, f, s) -> Lwt.return (`Error (Printf.sprintf "%s in %s: %s" (Unix.error_message error) f s)) | e -> raise e) 
+  Lwt.catch
+    (fun () -> let stream = Lwt_io.chars_of_file file in
+      Lwt_stream.to_string stream >>= fun config ->
+      configure ~domid ~config)
+    (function Unix.Unix_error (error, f, s) -> Lwt.return (`Error (Printf.sprintf "%s in %s: %s" (Unix.error_message error) f s)) | e -> raise e)
