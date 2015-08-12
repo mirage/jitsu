@@ -47,31 +47,25 @@ let get_tuple_list config key ?sep:(sep=':') parsel_fn parser_fn =
     `Ok (List.map (fun v ->
         try
           let sep_pos = String.index v sep in (* exception if not found *)
-          let left = 
-            if (sep_pos = 0) then begin
-              Printf.fprintf stderr "v=%s, left=None, sep_pos=%d, strlen=%d\n%!" v sep_pos (String.length v);
+          let left =
+            if (sep_pos = 0) then
               None
-            end else begin
+            else
               let s = String.sub v 0 sep_pos in
-              Printf.fprintf stderr "v=%s, left=%s, sep_pos=%d, strlen=%d\n%!" v s sep_pos (String.length v);
               Some (parsel_fn s key)
-            end
           in
-          let right = 
-            if (sep_pos+1 = String.length v) then begin (* right side is empty *)
-              Printf.fprintf stderr "v=%s, right=None, sep_pos=%d, strlen=%d\n%!" v sep_pos (String.length v);
+          let right =
+            if (sep_pos+1 = String.length v) then (* right side is empty *)
               None
-            end else begin
+            else
               let s = (String.sub v (sep_pos+1) ((String.length v) - sep_pos - 1)) in
-              Printf.fprintf stderr "v=%s, right=%s, sep_pos=%d, strlen=%d\n%!" v s sep_pos (String.length v);
               Some (parser_fn s key)
-            end
           in
           (left, right)
         with
-        | Not_found -> 
+        | Not_found ->
           if (String.length v = 0) then
-            (None, None) 
+            (None, None)
           else
             (Some (parsel_fn v key), None)) lst)
   with

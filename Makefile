@@ -27,6 +27,7 @@ $(BIN)/test: $(BIN)/jitsu $(addprefix $(TEST_SRC)/, $(TEST_FILES)) $(addprefix $
 	cd $(TEST_SRC) ; ocamlfind $(OCAMLOPT) $(TEST_INCLUDE) $(TEST_PACKAGES) $(OPT) $(addprefix $(SRC)/, $(FILES)) $(TEST_FILES) $(TEST_MAIN) -o $(BIN)/test -syntax camlp4o
 
 test: $(BIN)/test
+	@echo "Running tests..."
 	$(BIN)/test
 
 install: $(BIN)/jitsu
