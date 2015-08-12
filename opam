@@ -5,21 +5,25 @@ authors: "Magnus Skjegstad <magnus@skjegstad.com>"
 build: [
   [make]
 ]
-depends: [  "lwt" 
+build-test: [
+  [make "test"]
+]
+depends: [  "lwt"
             "dns"  { >= "0.15.3" }
             "xenstore"
             "xenstore_transport"
-            "cmdliner" 
-            "libvirt" 
+            "cmdliner"
+            "libvirt"
             "ipaddr"
-            "ezxmlm" 
+            "ezxmlm"
             "conduit"
             "vchan"
             "uuidm"
             "irmin-unix"
             "irmin" { >= "0.9.7" }
-            "xen-api-client" 
-            "xenctrl" ]
+            "xen-api-client"
+            "xenctrl"
+            "alcotest" ]
 depexts: [
   [["debian"] ["libvirt-bin" "libvirt-dev" "libxen-dev"]]
   [["ubuntu"] ["libvirt-bin" "libvirt-dev" "libxen-dev"]]
