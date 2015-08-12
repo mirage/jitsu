@@ -10,6 +10,8 @@ Jitsu supports several backends to manage the unikernel VMs. Currently [libvirt]
  - Bugtracker: https://github.com/mirage/jitsu/issues
  - Development version: https://github.com/mirage/jitsu
 
+*Jitsu is currently in pre-alpha. See [LICENSE](LICENSE) for conditions.*
+
 ## Installing Jitsu ##
 
 Jitsu needs the development libraries for Libvirt, Xapi and Xenlight to compile. This can be handled by [`opam`](https://opam.ocaml.org/) in most cases. To install the system dependencies, run
