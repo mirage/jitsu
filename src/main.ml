@@ -192,10 +192,10 @@ let jitsu backend connstr bindaddr bindport forwarder forwardport response_delay
       )
      >>= fun forward_resolver ->
      let connstr = Uri.of_string connstr in
-     let synjitsu = 
-         match synjitsu_domain_uuid with
-         | Some s -> Uuidm.of_string s
-         | None -> None
+     let synjitsu =
+       match synjitsu_domain_uuid with
+       | Some s -> Uuidm.of_string s
+       | None -> None
      in
      B.connect ~connstr () >>= fun r ->
      match r with
@@ -206,41 +206,44 @@ let jitsu backend connstr bindaddr bindport forwarder forwardport response_delay
            (* main thread, DNS server *)
            let add_with_config config_array = (
              let vm_config = (Hashtbl.create (Array.length config_array)) in
-             (Array.iter (fun (k,v) -> Hashtbl.replace vm_config k v) config_array);
-             let get k =
-               (Printf.printf "%s=" k;
-                try
-                  let v = (Hashtbl.find vm_config k) in
-                  Printf.printf "%s\n" v; v
-                with Not_found -> log (Printf.sprintf "Missing command line key: %s" k); raise Not_found)
-             in
-             let dns_name = Dns.Name.of_string (get "dns") in
-             let vm_name = get "name" in
-             let vm_ip = Ipaddr.V4.of_string_exn (get "ip") in
-             log (Printf.sprintf "Adding domain '%s' for VM '%s' with ip %s" (Dns.Name.to_string dns_name) vm_name (Ipaddr.V4.to_string vm_ip));
-             or_abort (fun () -> Jitsu.add_vm t ~dns_names:[dns_name] ~vm_ip ~vm_stop_mode ~response_delay ~dns_ttl:ttl ~vm_config)
+             (Array.iter (fun (k,v) -> Hashtbl.add vm_config k v) config_array); (* Use .add to support multiple values per parameter name *)
+             let dns_name = Options.get_dns_name vm_config "dns" in
+             let vm_name = Options.get_str vm_config "name" in
+             let vm_ip = Options.get_ipaddr vm_config "ip" in
+             match dns_name, vm_name, vm_ip with
+             | `Error e, _, _
+             | _, `Error e, _
+             | _, _, `Error e -> raise (Failure (Options.string_of_error e))
+             | `Ok dns_name, `Ok vm_name, `Ok vm_ip -> begin
+                 match (Ipaddr.to_v4 vm_ip) with
+                 | None -> raise (Failure (Printf.sprintf "Only IPv4 is supported. %s is not a valid IPv4 address." (Ipaddr.to_string vm_ip)))
+                 | Some vm_ip -> begin
+                     log (Printf.sprintf "Adding domain '%s' for VM '%s' with ip %s" (Dns.Name.to_string dns_name) vm_name (Ipaddr.V4.to_string vm_ip));
+                     or_abort (fun () -> Jitsu.add_vm t ~dns_names:[dns_name] ~vm_ip ~vm_stop_mode ~response_delay ~dns_ttl:ttl ~vm_config)
+                   end
+               end
            ) in
            Lwt_list.iter_p add_with_config map_domain
            >>= fun () ->
            log (Printf.sprintf "Starting DNS server on %s:%d..." bindaddr bindport);
-           try_lwt 
-               let processor = ((Dns_server.processor_of_process (Jitsu.process t))
-                            :> (module Dns_server.PROCESSOR)) in
-               Dns_server_unix.serve_with_processor ~address:bindaddr ~port:bindport ~processor
+           try_lwt
+             let processor = ((Dns_server.processor_of_process (Jitsu.process t))
+                              :> (module Dns_server.PROCESSOR)) in
+             Dns_server_unix.serve_with_processor ~address:bindaddr ~port:bindport ~processor
            with
-               | e -> log (Printf.sprintf "DNS thread exited unexpectedly with exception: %s" (Printexc.to_string e)); Lwt.return_unit
-           >>= fun () ->
-           log "DNS server no longer running. Exiting...";
-           Lwt.return_unit);
+           | e -> log (Printf.sprintf "DNS thread exited unexpectedly with exception: %s" (Printexc.to_string e)); Lwt.return_unit
+             >>= fun () ->
+             log "DNS server no longer running. Exiting...";
+             Lwt.return_unit);
 
           (* maintenance thread, delay in seconds *)
-          (try_lwt 
-               maintenance_thread t 5.0
+          (try_lwt
+             maintenance_thread t 5.0
            with
-               | e -> log (Printf.sprintf "Maintenance thread exited unexpectedly with exception: %s" (Printexc.to_string e)); Lwt.return_unit
-           >>= fun () ->
-           log "Maintenance thread no longer running. Exiting..."; 
-           Lwt.return_unit)]);
+           | e -> log (Printf.sprintf "Maintenance thread exited unexpectedly with exception: %s" (Printexc.to_string e)); Lwt.return_unit
+             >>= fun () ->
+             log "Maintenance thread no longer running. Exiting...";
+             Lwt.return_unit)]);
   )
 
 let jitsu_t =

@@ -80,7 +80,7 @@ module Make (Vm_backend : Backends.VM_BACKEND) = struct
     get_vm_state t vm_uuid >>= fun vm_state ->
     match vm_state with
     | Vm_state.Running ->
-      get_vm_name t vm_uuid >>= fun vm_name -> 
+      get_vm_name t vm_uuid >>= fun vm_name ->
       let uuid_s = Uuidm.to_string vm_uuid in
       Irmin_backend.get_stop_mode t.storage ~vm_uuid >>= fun stop_mode ->
       begin match stop_mode with
@@ -100,7 +100,7 @@ module Make (Vm_backend : Backends.VM_BACKEND) = struct
 
   let start_vm t vm_uuid =
     get_vm_state t vm_uuid >>= fun vm_state ->
-    get_vm_name t vm_uuid >>= fun vm_name -> 
+    get_vm_name t vm_uuid >>= fun vm_name ->
     t.log (Printf.sprintf "Starting VM %s (name=%s, state=%s)" (Uuidm.to_string vm_uuid) vm_name (Vm_state.to_string vm_state));
     let update_stats () =
       Irmin_backend.set_start_timestamp t.storage ~vm_uuid (Unix.time ()) >>= fun () ->
@@ -174,7 +174,7 @@ module Make (Vm_backend : Backends.VM_BACKEND) = struct
         (* print titles *)
         t.log (Printf.sprintf fmt "uuid" "name" "state" "delay" "start_time" "tot_starts" "stop_mode" "DNS" "IP" "TTL" "tot_req" "last_req");
         get_vm_state t vm_uuid >>= fun vm_state ->
-        get_vm_name t vm_uuid >>= fun vm_name -> 
+        get_vm_name t vm_uuid >>= fun vm_name ->
         Irmin_backend.get_ip t.storage ~vm_uuid >>= fun vm_ip ->
         Irmin_backend.get_response_delay t.storage ~vm_uuid >>= fun response_delay ->
         Irmin_backend.get_start_timestamp t.storage ~vm_uuid >>= fun start_ts ->
@@ -187,30 +187,30 @@ module Make (Vm_backend : Backends.VM_BACKEND) = struct
             Irmin_backend.get_total_requests t.storage ~vm_uuid ~dns_name >>= fun total_requests ->
             Irmin_backend.get_ttl t.storage ~vm_uuid ~dns_name >>= fun ttl ->
             t.log (Printf.sprintf fmt
-                  (Uuidm.to_string vm_uuid)
-                  vm_name
-                  (Vm_state.to_string vm_state)
-                  (string_of_float response_delay)
-                  (ts start_ts)
-                  (string_of_int total_starts)
-                  (Vm_stop_mode.to_string stop_mode)
-                  (Dns.Name.to_string dns_name)
-                  (ip_option_to_string vm_ip)
-                  (string_of_int ttl)
-                  (string_of_int total_requests)
-                  (ts last_request_ts));
+                     (Uuidm.to_string vm_uuid)
+                     vm_name
+                     (Vm_state.to_string vm_state)
+                     (string_of_float response_delay)
+                     (ts start_ts)
+                     (string_of_int total_starts)
+                     (Vm_stop_mode.to_string stop_mode)
+                     (Dns.Name.to_string dns_name)
+                     (ip_option_to_string vm_ip)
+                     (string_of_int ttl)
+                     (string_of_int total_requests)
+                     (ts last_request_ts));
             Lwt.return_unit
           ) dns_name_list >>= fun () ->
         if dns_name_list = [] then (* no DNS entries, output first part only *)
           t.log (Printf.sprintf fmt
-                  (Uuidm.to_string vm_uuid)
-                  vm_name
-                  (Vm_state.to_string vm_state)
-                  (string_of_float response_delay)
-                  (ts start_ts)
-                  (string_of_int total_starts)
-                  (Vm_stop_mode.to_string stop_mode)
-          "(none)" "" "" "" "");
+                   (Uuidm.to_string vm_uuid)
+                   vm_name
+                   (Vm_state.to_string vm_state)
+                   (string_of_float response_delay)
+                   (ts start_ts)
+                   (string_of_int total_starts)
+                   (Vm_stop_mode.to_string stop_mode)
+                   "(none)" "" "" "" "");
         Lwt.return_unit) vm_uuids
 
   (* add vm to be monitored by jitsu *)
@@ -259,7 +259,7 @@ module Make (Vm_backend : Backends.VM_BACKEND) = struct
   (** Process function for ocaml-dns. Starts new VMs from DNS queries or
       forwards request to a fallback resolver *)
   let process t ~src:_ ~dst:_ packet =
-      t.log "process";
+    t.log "process";
     Irmin_backend.get_dns_db t.storage >>= fun dns_db ->
     let open Packet in
     match packet.questions with
@@ -302,7 +302,7 @@ module Make (Vm_backend : Backends.VM_BACKEND) = struct
           end else
             (* TODO how to return results with multiple IPs - for now just return DNS answer *)
             Lwt.return (Some answer)
-          | _ ->
+        | _ ->
           t.log (Printf.sprintf "dns: no local match for %s, forwarding..." (Name.to_string q.q_name));
           Dns_helpers.fallback t.forward_resolver q.q_class q.q_type q.q_name
       end

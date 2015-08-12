@@ -74,6 +74,30 @@ let add_vm_dns t ~vm_uuid ~dns_name ~dns_ttl =
   t.dns_cache_dirty <- true;
   Lwt.return_unit
 
+let list_of_hashtbl hashtbl =
+(* fold Hashtbl into (key, value list) list, where the list of values is all bindings for this key in the hash table.
+ * The list of values is in inserted order, the key order is unspecified *)
+  let keys = Hashtbl.fold (fun k _ l ->
+      match (List.exists (fun s -> s = k) l) with (* fold hashtbl to list of unique keys*)
+      | false -> l @ [k]
+      | true -> l)
+     hashtbl [] in
+  List.fold_left (fun l key ->
+      (* values returned from find_all is in reversed inserted order, so reverse list *)
+      let bindings = List.rev (Hashtbl.find_all hashtbl key) in
+      let values = List.fold_left (fun l v -> l @ [v]) [] bindings in
+      l @ [(key, values)]
+  ) [] keys
+
+let hashtbl_of_list lst =
+(* Insert key/values in Hastbl. List is expected to be in format (key, value list) list, as returned by list_of_hashtbl. *)
+  let tbl = Hashtbl.create (List.length lst) in (* this length will be wrong if there are multiple bindings per key *)
+  List.iter (fun row ->
+      let key,value_list = row in
+      List.iter (fun v ->
+          Hashtbl.add tbl key v) value_list) lst;
+  tbl
+
 let add_vm t ~vm_uuid ~vm_ip ~vm_stop_mode ~response_delay ~vm_config =
   let it = t.connection in
   let path = [ "jitsu" ; "vm" ; (Uuidm.to_string vm_uuid) ] in
@@ -81,10 +105,15 @@ let add_vm t ~vm_uuid ~vm_ip ~vm_stop_mode ~response_delay ~vm_config =
   Irmin.update (it "Registering VM response delay")  (path @ [ "response_delay" ]) (string_of_float response_delay) >>= fun () ->
   Irmin.update (it "Registering VM IP")              (path @ [ "ip" ]) (Ipaddr.V4.to_string vm_ip) >>= fun () ->
   let path = path @ [ "config" ] in
-  let config = Hashtbl.fold (fun k v l ->
-      l @ [(k,v)]) vm_config [] in (* fold hashtbl to list *)
-  Lwt_list.iter_s (fun (k,v) ->  (* add config to irmin db *)
-      Irmin.update (it (Printf.sprintf "Registering extra config value %s" k)) (path @ [ k ]) v) config >>= fun () ->
+  let config_list = list_of_hashtbl vm_config in
+  Lwt_list.iter_s (fun row ->
+      let k,value_list = row in
+      Lwt_list.iteri_s (fun i v ->
+          Irmin.update (it (Printf.sprintf "Registering extra config value %s (%d)" k i))
+            (path @ [ k ; (string_of_int i) ]) v
+        ) value_list)
+      config_list
+  >>= fun () ->
   t.dns_cache_dirty <- true;
   Lwt.return_unit
 
@@ -207,14 +236,21 @@ let get_key_names t path =
 let get_vm_config t ~vm_uuid =
   let it = t.connection in
   let path = [ "jitsu" ; "vm" ; (Uuidm.to_string vm_uuid) ; "config" ] in
-  get_key_names t path >>= fun config_keys ->
-  let h = Hashtbl.create (List.length config_keys) in
-  Lwt_list.iter_s (fun k ->
-      Irmin.read (it (Printf.sprintf "Read config value %s" k)) (path @ [ k ]) >>= fun r ->
+  get_key_names t path
+  >>= fun config_keys ->
+  Lwt_list.fold_left_s (fun l key ->
+    get_key_names t (path @ [key]) >>= fun value_keys -> (* get value keys, expected to be ints 0-n *)
+    let value_counter = List.sort (fun a b -> (Int64.compare (Int64.of_string a) (Int64.of_string b))) value_keys in (* sort by numeric order *)
+    Lwt_list.fold_left_s (fun l i ->
+      Irmin.read (it (Printf.sprintf "Read config value %s (%s)" key i)) (path @ [ key ; i ]) >>= fun r ->
       match r with
-      | None -> Lwt.return_unit
-      | Some s -> Lwt.return (Hashtbl.replace h k s)) config_keys >>= fun () ->
-  Lwt.return h
+      | None -> Lwt.return l
+      | Some s -> Lwt.return (l @ [s])
+    ) [] value_counter >>= fun values ->
+    Lwt.return (l @ [(key, values)])
+  ) [] config_keys
+  >>= fun folded_hashtbl ->
+  Lwt.return (hashtbl_of_list folded_hashtbl)
 
 let get_vm_list t =
   let path = [ "jitsu" ; "vm" ] in
@@ -223,7 +259,7 @@ let get_vm_list t =
       match (Uuidm.of_string v) with
       | None -> t.log (Printf.sprintf "Unable to parse UUID %s, VM ignored" v); Lwt.return_none
       | Some uuid -> Lwt.return (Some uuid)
-  ) key_names
+    ) key_names
 
 let get_vm_dns_name_list t ~vm_uuid =
   let path = [ "jitsu" ; "vm" ; (Uuidm.to_string vm_uuid) ; "dns" ] in

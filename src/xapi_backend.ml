@@ -41,9 +41,9 @@ let try_xapi msg f =
   | e -> Lwt.return (`Error (`Unknown (Printf.sprintf "%s: %s" msg (Printexc.to_string e))))
 
 let parse_uuid_exn uuid =
-    match (Uuidm.of_string uuid) with
-    | None -> raise (Invalid_config (Printf.sprintf "unable to parse UUID %s" uuid))
-    | Some uuid -> uuid
+  match (Uuidm.of_string uuid) with
+  | None -> raise (Invalid_config (Printf.sprintf "unable to parse UUID %s" uuid))
+  | Some uuid -> uuid
 
 let define_vm t ~name_label ~pV_kernel =
   try_xapi "Unable to define vm" (fun () ->
@@ -87,18 +87,18 @@ let default_log s =
 let connect ?log_f:(log_f=default_log) ?connstr () =
   match connstr with
   | None -> Lwt.return (`Error (`Unable_to_connect "Empty connect string"))
-  | Some uri -> 
-    let error_msg = 
-        Printf.sprintf "Unable to connect to Xapi backend. Verify that the connect string is correct (%s) and that you have the right permissions." (Uri.to_string uri)
+  | Some uri ->
+    let error_msg =
+      Printf.sprintf "Unable to connect to Xapi backend. Verify that the connect string is correct (%s) and that you have the right permissions." (Uri.to_string uri)
     in
     try_xapi error_msg (fun () ->
-      let host = match Uri.host uri with | Some h -> h | None -> "127.0.0.1" in
-      let user = match Uri.user uri with | Some u -> u | None -> "root" in
-      let pass = match Uri.host uri with | Some h -> h | None -> "" in
-      let rpc = if !json then make_json host else make host in
-      lwt session_id = Session.login_with_password ~rpc ~uname:user ~pwd:pass ~version:"1.0" in
-      Lwt.return { connection = (rpc, session_id) ; log_f }
-    )
+        let host = match Uri.host uri with | Some h -> h | None -> "127.0.0.1" in
+        let user = match Uri.user uri with | Some u -> u | None -> "root" in
+        let pass = match Uri.host uri with | Some h -> h | None -> "" in
+        let rpc = if !json then make_json host else make host in
+        lwt session_id = Session.login_with_password ~rpc ~uname:user ~pwd:pass ~version:"1.0" in
+        Lwt.return { connection = (rpc, session_id) ; log_f }
+      )
 
 (* convert vm state to string *)
 let xapi_state_to_vm_state = function
@@ -118,35 +118,29 @@ let lookup_vm_by_name t name =
 
 let configure_vm t config =
   (* Tries to find the UUID for the VM config
-   - Fails if both name and uuid are missing
-   - Fails if uuid is missing and unable to lookup name
-   - Fails if uuid is specified and unable to lookup uuid *)
+     - Fails if both name and uuid are missing
+     - Fails if uuid is missing and unable to lookup name
+     - Fails if uuid is specified and unable to lookup uuid *)
   try_xapi "Unable to configure VM" (fun () ->
-      let get p =
-          try 
-              Some (Hashtbl.find config p)
-          with
-          | Not_found -> None
-      in 
-      match (get "uuid") with
-      | Some uuid -> begin (* uuid set, parse and check *)
+      let uuid = Options.get_str config "uuid" in
+      let name = Options.get_str config "name" in
+      match uuid, name with
+      | `Ok uuid, _ -> begin (* uuid set, parse and check *)
           let uuid = parse_uuid_exn uuid in
           let (rpc, session_id) = t.connection in
           lwt domain = VM.get_by_uuid ~rpc:rpc ~session_id:session_id ~uuid:(Uuidm.to_string uuid) in
           lwt uuid = VM.get_uuid ~rpc:rpc ~session_id:session_id ~self:domain in
           Lwt.return (parse_uuid_exn uuid)
         end
-      | None -> begin (* uuid not set, try to lookup name *)
-          match (get "name") with
-          | None -> raise (Invalid_config "uuid or name has to be set")
-          | Some name -> begin
-              let (rpc, session_id) = t.connection in
-              lwt domains = VM.get_by_name_label ~rpc:rpc ~session_id:session_id ~label:name in
-              lwt uuid = VM.get_uuid ~rpc:rpc ~session_id:session_id ~self:(List.hd domains) in
-              Lwt.return (parse_uuid_exn uuid)
-          end
-        end 
-  )
+      | `Error `Required_key_not_found _, `Ok name -> begin (* uuid not set, try to lookup name *)
+          let (rpc, session_id) = t.connection in
+          lwt domains = VM.get_by_name_label ~rpc:rpc ~session_id:session_id ~label:name in
+          lwt uuid = VM.get_uuid ~rpc:rpc ~session_id:session_id ~self:(List.hd domains) in
+          Lwt.return (parse_uuid_exn uuid)
+        end
+      | `Error `Required_key_not_found _, `Error e -> raise (Invalid_config (Printf.sprintf "Unable to read name: %s" (Options.string_of_error e)))
+      | `Error e, _ -> raise (Invalid_config (Printf.sprintf "Unable to read UUID: %s" (Options.string_of_error e)))
+    )
 
 let get_state t uuid =
   try_xapi "Unable to get VM state" (fun () ->

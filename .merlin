@@ -14,8 +14,8 @@ PKG xenstore_transport
 PKG xenlight
 PKG uuidm
 PKG xen-api-client
-
+PKG alcotest
 EXT lwt
-
-S src
+S src/**
+S lib_test/**
 B bin

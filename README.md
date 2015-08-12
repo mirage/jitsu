@@ -6,15 +6,28 @@ Although Jitsu can be used to control other types of virtual machines, it is mai
 
 Jitsu supports several backends to manage the unikernel VMs. Currently [libvirt](https://libvirt.org), [XAPI](http://wiki.xenproject.org/wiki/XAPI) and [libxenlight](http://wiki.xen.org/wiki/Choice_of_Toolstacks#Libxenlight_.28libxl.29) are supported. Metadata and internal state is stored in [Irmin](https://github.com/mirage/irmin) and the DNS server is implemented on top of [ocaml-dns](https://github.com/mirage/ocaml-dns).
 
+ - Latest release: https://github.com/mirage/jitsu/releases
+ - Bugtracker: https://github.com/mirage/jitsu/issues
+ - Development version: https://github.com/mirage/jitsu
+
+*Jitsu is currently in pre-alpha. See [LICENSE](LICENSE) for conditions.*
+
 ## Installing Jitsu ##
 
-Jitsu needs the development libraries for Libvirt, Xapi and Xenlight to compile. This can be handled by `opam` in most cases. To install the system dependencies, run
+Jitsu needs the development libraries for Libvirt, Xapi and Xenlight to compile. This can be handled by [`opam`](https://opam.ocaml.org/) in most cases. To install the system dependencies, run
 
 ```
 opam depext xenctrl libvirt xen-api-client
 ```
 
-To compile the latest development version of Jitsu, pin Jitsu to the current master and run install:
+The latest release of Jitsu is not available in the main `opam` repository yet, but can be installed from `mirage-dev`. To set up `mirage-dev` and install Jitsu:
+
+```
+opam add remote mirage-dev https://github.com/mirage/mirage-dev.git
+opam install jitsu
+```
+
+To install the latest development version of Jitsu, you can pin Jitsu to the current master branch on Github. This version is *unstable* and changes frequently.
 
 ```
 opam pin add jitsu 'https://github.com/mirage/jitsu.git'
@@ -48,9 +61,58 @@ sudo ./jitsu dns=www.openmirage.org,ip=192.168.0.22,name=mirage-www -c xen:///
 
 The command above connects to a local Xen-server (from dom0) through libvirt (the default) and starts the DNS server. Requests for www.openmirage.org will be redirected to the Xen-VM called "mirage-www" with IP 192.168.0.22. If "mirage-www" is not running, Jitsu will start it automatically before responding to the DNS request.
 
-Each unikernel is configured using a set of key/value pairs separated by commas. The parameters that are supported depends on which virtualization backend (libvirt, xapi or libxl) is used to control the unikernels. See [below](#options) or run ./jitsu --help for a complete set of options.
+Each unikernel is configured using a set of key/value pairs separated by commas. The parameters that are supported depends on which virtualization backend (libvirt, xapi or libxl) is used to control the unikernels. See [below](#options) or run `./jitsu --help` for a complete set of options.
 
-### Example: Suspend/resume Linux VMs in Virtualbox ###
+### Example: Manage a MirageOS unikernel ###
+For this example you need a working MirageOS unikernel with a static IP address and access to dom0 on a Xen server with `libxl` installed. An example unikernel that displays the unikernel boot time can be found [here](https://github.com/MagnusS/mirage-stats-demo) (a live version is running [here](http://www.jitsu.v0.no)). Follow the instructions in the README to configure the network settings. After building the unikernel you should have a binary file that can be booted in Xen, usually `mirage-www.xen`. You can also check the generated .xl file and locate the `kernel=` parameter to find the file.
+
+We should now be able to start Jitsu to manage the unikernel:
+
+```
+sudo jitsu -x libxl dns=www.example.org,ip=10.0.0.1,kernel=mirage-www.xen,memory=64000,name=www,nic=br0
+```
+
+This command boots the unikernel when `www.example.org` is resolved. The IP 10.0.0.1 is returned to clients that resolve the domain and the booted unikernel is in `mirage-www.xen`. The VM is given 64MB of memory and access to a network bridge at `br0`. 
+
+If everything worked, Jitsu should now be running a DNS server on localhost. To verify that the domain is automatically started you can run `host` to resolve the domain:
+
+```
+host www.example.org 127.0.0.1
+Using domain server:
+Name: 127.0.0.1
+Address: 127.0.0.1#53
+Aliases: 
+
+www.example.org has address 10.0.0.1
+```
+
+After running `host` you should be able to open the web page on 10.0.0.1 (or telnet to port 80) and ping the IP.
+
+The unikernel is automatically destroyed after the DNS cache entry expires. This timeout can be set with the `--ttl` parameter. See `jitsu --help` for a full list of available parameters and options that can be passed to the `libxl` backend.
+
+### Example: Manage an Nginx rump kernel ###
+
+[Rump kernels](https://github.com/rumpkernel/wiki/wiki/Tutorial%3A-Getting-Started) can also be managed by Jitsu, but currently only with the `libxl` backend. Prior to running Jitsu, the [rumprun](https://github.com/rumpkernel/rumprun) tool must be used to generate a JSON configuration file that is passed to Jitsu using the `rump_config` parameter.
+
+A tutorial for building a unikernel that hosts a static web page in QEMU is available [here](https://github.com/rumpkernel/wiki/wiki/Tutorial%3A-Serve-a-static-website-as-a-Unikernel). To get a Xen unikernel, follow the instructions, but run `rumpbake` with the `xen_pv` parameter instead of `hw_virtio`. After baking the Xen unikernel it must be started once with `rumprun` to obtain the configuration files. To run the Nginx unikernel from the tutorial in Xen you could (depending on your configuration) use a command similar to this:
+
+```
+sudo rumprun -T tmp xen -M 64 -i -b images/stubetc.iso,/etc -b images/data.iso,/data -I mynet,xenif,bridge=br0 -W mynet,inet,static,10.0.0.1/24,10.0.1.1  -- nginx.bin -c /data/conf/nginx.conf
+```
+
+The command above will boot a rump kernel that mounts two disks (stubetc.iso and data.iso), connect it to the network bridge `br0` and give it the IP 10.0.0.1. The `-T` parameter saves the generated configuration files in the `tmp` directory. You can verify that the unikernel booted correctly by running `sudo xl list`. You can also attach to the console with `sudo xl console [name of unikernel]`. To stop the unikernel, use `sudo xl destroy [name of unikernel]`.
+
+If the unikernel booted correctly we should now be able to use the file `tmp/json.conf` to boot the rump kernel in Jitsu.
+
+```
+jitsu -x libxl dns=www.example.org,memory=64000,ip=10.0.0.1,name=rump,kernel=nginx.bin,disk=images/stubetc.iso@xvda,disk=/images/data.iso@xvdb,nic=br0,rump_config=tmp/json.cfg 
+```
+
+Verify that the unikernel boots in Jitsu by running `host www.example.org 127.0.0.1`. An Nginx web server should now be running in a rump kernel on IP 10.0.0.1.
+
+Note that rump kernels take longer to boot than MirageOS unikernels. When the disks are mounted as ISO files (as in this example) the boot time can be more than a second. The `-d` parameter can be used to delay the DNS response to compensate for this. See `jitsu --help` for a full list of available options.
+
+### Example: Suspend/resume Linux VMs in Virtualbox with libvirt ###
 Jitsu can be used to control VMs in Virtualbox with libvirt. Note that how well this will work depends on how quickly the VM is able to respond to requests after resuming from suspend (see also the `-d` parameter for how to delay the DNS response).
 
 First, install libvirt and use virsh to display a list of available VMs. Example output:

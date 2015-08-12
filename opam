@@ -2,24 +2,31 @@ opam-version: "1.2"
 name: "jitsu"
 maintainer: "Magnus Skjegstad <magnus@skjegstad.com>"
 authors: "Magnus Skjegstad <magnus@skjegstad.com>"
+homepage: "https://github.com/mirage/jitsu"
+bug-reports: "https://github.com/mirage/jitsu/issues/"
+dev-repo: "https://github.com/mirage/jitsu.git"
 build: [
   [make]
 ]
-depends: [  "lwt" 
+build-test: [
+  [make "test"]
+]
+depends: [  "lwt"
             "dns"  { >= "0.15.3" }
             "xenstore"
             "xenstore_transport"
-            "cmdliner" 
-            "libvirt" 
+            "cmdliner"
+            "libvirt"
             "ipaddr"
-            "ezxmlm" 
+            "ezxmlm"
             "conduit"
             "vchan"
             "uuidm"
             "irmin-unix"
             "irmin" { >= "0.9.7" }
-            "xen-api-client" 
-            "xenctrl" ]
+            "xen-api-client"
+            "xenctrl"
+            "alcotest" ]
 depexts: [
   [["debian"] ["libvirt-bin" "libvirt-dev" "libxen-dev"]]
   [["ubuntu"] ["libvirt-bin" "libvirt-dev" "libxen-dev"]]

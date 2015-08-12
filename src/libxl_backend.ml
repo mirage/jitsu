@@ -62,7 +62,7 @@ let uuidm_of_xen_uuid uuid =
 
 let xen_uuid_of_uuidm uuid =
   let bytes = Uuidm.to_bytes uuid in
-   int_array_of_string bytes 
+  int_array_of_string bytes
 
 let dominfo_to_uuid dominfo =
   let xen_uuid = dominfo.Xenlight.Dominfo.uuid in
@@ -71,9 +71,9 @@ let dominfo_to_uuid dominfo =
   | Some uuid -> uuid
 
 let parse_uuid_exn uuid =
-    match (Uuidm.of_string uuid) with
-    | None -> raise (Invalid_config (Printf.sprintf "unable to parse UUID %s" uuid))
-    | Some uuid -> uuid
+  match (Uuidm.of_string uuid) with
+  | None -> raise (Invalid_config (Printf.sprintf "unable to parse UUID %s" uuid))
+  | Some uuid -> uuid
 
 let try_call msg f =
   try
@@ -98,15 +98,15 @@ let try_call msg f =
     end
 
 let create_logger log_f () =
-    let open Xentoollog in
-    let vmessage _level errno ctx msg =
-      let errno_str = match errno with None -> "" | Some s -> Printf.sprintf ": errno=%d" s
-      and ctx_str = match ctx with None -> "" | Some s -> Printf.sprintf "%s" s in
-      log_f (Printf.sprintf "# %s%s: %s\n%!" ctx_str errno_str msg) in
-    let progress _ctx what percent dne total =
-      let nl = if dne = total then "\n" else "" in
-      log_f (Printf.sprintf "\rProgress %s %d%% (%Ld/%Ld)%s" what percent dne total nl) in
-    create "Xentoollog.logger" { vmessage; progress }
+  let open Xentoollog in
+  let vmessage _level errno ctx msg =
+    let errno_str = match errno with None -> "" | Some s -> Printf.sprintf ": errno=%d" s
+    and ctx_str = match ctx with None -> "" | Some s -> Printf.sprintf "%s" s in
+    log_f (Printf.sprintf "# %s%s: %s\n%!" ctx_str errno_str msg) in
+  let progress _ctx what percent dne total =
+    let nl = if dne = total then "\n" else "" in
+    log_f (Printf.sprintf "\rProgress %s %d%% (%Ld/%Ld)%s" what percent dne total nl) in
+  create "Xentoollog.logger" { vmessage; progress }
 
 (* All libxl calls need one of these to say where the logs should go.
    We delay the creation because it can fail (e.g. due to insufficient privileges)
@@ -194,30 +194,7 @@ let blocking_xenlight f =
     Sys.set_signal Sys.sigchld old_handler;
     raise e
 
-
-let domain_config t uuid config =
-  let get_option key =
-    try
-      Some (Hashtbl.find config key)
-    with
-    | Not_found -> None
-  in
-  let get_required key =
-    try
-      Hashtbl.find config key
-    with
-    | Not_found -> raise (Invalid_config (Printf.sprintf "Missing required config key %s" key))
-  in
-  let name = get_required "name" in
-  let memory = Int64.of_string (get_required "memory") in
-  let kernel = get_required "kernel" in
-  let cmdline = get_option "cmdline" in
-  let scripts = (match (get_option "scripts") with
-      | None -> []
-      | Some s -> [s]) in (* TODO: Support list options... *)
-  let nics = (match (get_option "nics") with
-      | None -> []
-      | Some s -> [s]) in (* TODO: Support list options *)
+let domain_config t ~uuid ~name ~kernel ~memory ?cmdline:(cmdline=None) ?scripts:(scripts=[]) ?nics:(nics=[]) ?disks:(disks=[]) () =
   let c_info = Xenlight.Domain_create_info.({ (default !(t.context) ()) with
                                               Xenlight.Domain_create_info.xl_type = Xenlight.DOMAIN_TYPE_PV;
                                               uuid = (xen_uuid_of_uuidm uuid);
@@ -225,10 +202,11 @@ let domain_config t uuid config =
                                               run_hotplug_scripts = Some true;
                                             }) in
   let b_info = Xenlight.Domain_build_info.({ (default !(t.context) ~xl_type:Xenlight.DOMAIN_TYPE_PV ()) with
-                                             max_memkb = memory;
-                                             target_memkb = memory;
+                                             max_memkb = Int64.of_int memory;
+                                             target_memkb = Int64.of_int memory;
                                            }) in
-  let b_info_xl_type = match b_info.Xenlight.Domain_build_info.xl_type with
+  let b_info_xl_type =
+    match b_info.Xenlight.Domain_build_info.xl_type with
     | Xenlight.Domain_build_info.Pv x -> x
     | _ -> assert false in
   let b_info = Xenlight.Domain_build_info.({ b_info with
@@ -242,17 +220,36 @@ let domain_config t uuid config =
     let s = Array.of_list scripts in
     let n = Array.of_list nics in
     Array.init (Array.length n)
-      (fun i -> let bridge = Some (Array.get n i) in
-        let script = (match s with [||] -> None | scripts -> Some (Array.get scripts (i mod Array.length scripts))) in
-        Xenlight.Device_nic.({ (default !(t.context) ()) with
-                               Xenlight.Device_nic.mtu = 1500;
-                               script;
-                               bridge;
-                             })) in
+      (fun i ->
+         let bridge = Some (Array.get n i) in
+         let script = begin
+           match s with
+           | [||] -> None
+           | scripts -> Some (Array.get scripts (i mod Array.length scripts))
+         end in
+         Xenlight.Device_nic.({ (default !(t.context) ()) with
+                                Xenlight.Device_nic.mtu = 1500;
+                                script;
+                                bridge;
+                              })) in
+  let disks =
+    let disks = Array.of_list disks in
+    Array.init (Array.length disks)
+      (fun i ->
+         let pdev_path,vdev = (Array.get disks i) in
+         let format = Xenlight.DISK_FORMAT_RAW in
+         let readwrite = 1 in
+         Xenlight.Device_disk.({ (default !(t.context) ()) with
+                                 pdev_path;
+                                 vdev ;
+                                 format ;
+                                 readwrite
+                               })) in
   Xenlight.Domain_config.({ (default !(t.context) ()) with
                             c_info;
                             b_info;
                             nics;
+                            disks
                           })
 
 (* Module signature implementations *)
@@ -341,8 +338,40 @@ let start_vm t uuid config =
   try_call "Unable to start VM" (fun () ->
       blocking_xenlight (fun () ->
           try
-            let domid = Xenlight.Domain.create_new !(t.context) (domain_config t uuid config) () in
-            Lwt.return (`Ok (Xenlight.Domain.unpause !(t.context) domid))
+            let name = Options.get_str config "name" in
+            let kernel = Options.get_file_name config "kernel" in
+            let memory = Options.get_int config "memory" in
+            let cmdline = Options.(optional (get_str config "cmdline")) in
+            let scripts = (
+              let lst = Options.(optional (get_str_list config "script")) in
+              match lst with
+              | None -> []
+              | Some s -> s) in
+            let nics = (
+              let lst = Options.(optional (get_str_list config "nic")) in
+              match lst with
+              | None -> []
+              | Some s -> s) in
+            let disks = (
+              let lst = Options.(optional (get_str_tuple_list config "disk")) in
+              match lst with
+              | None -> []
+              | Some s -> s) in
+            let rump_config = Options.(optional (Options.get_file_name config "rump_config")) in
+            match name, kernel, memory with
+            | `Error e,_,_
+            | _,`Error e,_
+            | _,_,`Error e -> raise (Invalid_config (Options.string_of_error e))
+            | `Ok name,`Ok kernel,`Ok memory -> begin
+                let domconfig = domain_config t ~uuid ~name ~kernel ~memory ~cmdline ~scripts ~nics ~disks () in
+                let domid = Xenlight.Domain.create_new !(t.context) domconfig () in
+                (match rump_config with
+                 | Some file -> Rump.configure_from_file ~domid ~file
+                 | None -> Lwt.return `Ok)
+                >>= function
+                | `Ok -> Lwt.return (`Ok (Xenlight.Domain.unpause !(t.context) domid))
+                | `Error e -> Lwt.return (`Error (`Unknown e))
+              end
           with
             e -> Lwt.return (`Error (`Unknown (Printf.sprintf "Create failed with: %s.\n%!" (Printexc.to_string e))))
         )
@@ -357,7 +386,7 @@ let get_name t uuid =
           | Some n -> Lwt.return (`Ok (Some n))
           | None -> Lwt.return (`Error `Not_found)
         )
-  end
+    end
   | `Ok _ -> Lwt.return (`Ok None)
   | `Error e -> Lwt.return (`Error e)
 
@@ -370,17 +399,16 @@ let get_domain_id t uuid =
 
 let configure_vm _ config =
   try_call "Unable to get or create VM UUID" (fun () ->
-    let get key =
+      let get key =
         try
           Some (Hashtbl.find config key)
         with
-          | Not_found -> None
-    in
-    match (get "uuid") with
-    | None -> Lwt.return (`Ok (Uuidm.create `V4))
-    | Some s -> Lwt.return (`Ok (parse_uuid_exn s))
-  )
-  
+        | Not_found -> None
+      in
+      match (get "uuid") with
+      | None -> Lwt.return (`Ok (Uuidm.create `V4))
+      | Some s -> Lwt.return (`Ok (parse_uuid_exn s))
+    )
 
 let get_config_option_list =
   [ ("name", "Name of created VM (required)") ;
@@ -389,5 +417,8 @@ let get_config_option_list =
     ("kernel", "VM kernel file name (required)") ;
     ("memory", "VM memory in bytes (required)") ;
     ("cmdline", "Extra parameters passed to kernel (optional)") ;
-    ("nics", "Network devices (br0, eth0 etc) (optional, only one supported)") ;
-    ("scripts", "VIF script(s) (optional, only one supported)") ]
+    ("nic", "Network device (br0, eth0 etc). Can be set more than once to configure multiple NICs (optional)") ;
+    ("script", "Virtual interface (VIF) configuration script. Can be set more than once to specify a VIF script per network device (optional)") ;
+    ("disk", "Disk to connect to the Xen VM. Format '[dom0 device/file]:[hdX/xvdX/sdX etc]'. Can be set more than once to configure multiple disks (optional)") ;
+    ("rump_config", "Path to file with rump kernel JSON config (optional)") ;
+  ]
