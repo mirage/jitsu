@@ -6,15 +6,26 @@ Although Jitsu can be used to control other types of virtual machines, it is mai
 
 Jitsu supports several backends to manage the unikernel VMs. Currently [libvirt](https://libvirt.org), [XAPI](http://wiki.xenproject.org/wiki/XAPI) and [libxenlight](http://wiki.xen.org/wiki/Choice_of_Toolstacks#Libxenlight_.28libxl.29) are supported. Metadata and internal state is stored in [Irmin](https://github.com/mirage/irmin) and the DNS server is implemented on top of [ocaml-dns](https://github.com/mirage/ocaml-dns).
 
+ - Latest release: https://github.com/mirage/jitsu/releases
+ - Bugtracker: https://github.com/mirage/jitsu/issues
+ - Development version: https://github.com/mirage/jitsu
+
 ## Installing Jitsu ##
 
-Jitsu needs the development libraries for Libvirt, Xapi and Xenlight to compile. This can be handled by `opam` in most cases. To install the system dependencies, run
+Jitsu needs the development libraries for Libvirt, Xapi and Xenlight to compile. This can be handled by [`opam`](https://opam.ocaml.org/) in most cases. To install the system dependencies, run
 
 ```
 opam depext xenctrl libvirt xen-api-client
 ```
 
-To compile the latest development version of Jitsu, pin Jitsu to the current master and run install:
+The latest release of Jitsu is not available in the main `opam` repository yet, but can be installed from `mirage-dev`. To set up `mirage-dev` and install Jitsu:
+
+```
+opam add remote mirage-dev https://github.com/mirage/mirage-dev.git
+opam install jitsu
+```
+
+To install the latest development version of Jitsu, you can pin Jitsu to the current master branch on Github. This version is *unstable* and changes frequently.
 
 ```
 opam pin add jitsu 'https://github.com/mirage/jitsu.git'
