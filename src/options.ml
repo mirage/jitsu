@@ -34,7 +34,7 @@ let get config key parse_fn =
 
 let get_list config key parse_fn =
   try
-    let lst = Hashtbl.find_all config key in
+    let lst = List.rev (Hashtbl.find_all config key) in (* find_all returns inserted keys in reverse order, so reverse again *)
     `Ok (List.map (fun v -> parse_fn v key) lst)
   with
   | Invalid_value s -> (`Error (`Invalid_value s))
@@ -43,18 +43,37 @@ let get_list config key parse_fn =
 
 let get_tuple_list config key ?sep:(sep=':') parsel_fn parser_fn =
   try
-    let lst = Hashtbl.find_all config key in
+    let lst = List.rev (Hashtbl.find_all config key) in (* find_all returns inserted keys in reverse order, so reverse again *)
     `Ok (List.map (fun v ->
         try
-          let sep_pos = String.index v sep in
-          let left = String.sub v 0 sep_pos in
-          if (sep_pos+1 = String.length v) then (* right side is empty *)
-            ((Some (parsel_fn left key)), None)
-          else
-            let right = String.sub v (sep_pos+1) ((String.length v) - sep_pos) in
-            (Some (parsel_fn left key), Some (parser_fn right key))
+          let sep_pos = String.index v sep in (* exception if not found *)
+          let left = 
+            if (sep_pos = 0) then begin
+              Printf.fprintf stderr "v=%s, left=None, sep_pos=%d, strlen=%d\n%!" v sep_pos (String.length v);
+              None
+            end else begin
+              let s = String.sub v 0 sep_pos in
+              Printf.fprintf stderr "v=%s, left=%s, sep_pos=%d, strlen=%d\n%!" v s sep_pos (String.length v);
+              Some (parsel_fn s key)
+            end
+          in
+          let right = 
+            if (sep_pos+1 = String.length v) then begin (* right side is empty *)
+              Printf.fprintf stderr "v=%s, right=None, sep_pos=%d, strlen=%d\n%!" v sep_pos (String.length v);
+              None
+            end else begin
+              let s = (String.sub v (sep_pos+1) ((String.length v) - sep_pos - 1)) in
+              Printf.fprintf stderr "v=%s, right=%s, sep_pos=%d, strlen=%d\n%!" v s sep_pos (String.length v);
+              Some (parser_fn s key)
+            end
+          in
+          (left, right)
         with
-        | Not_found -> (Some (parsel_fn v key), None)) lst)
+        | Not_found -> 
+          if (String.length v = 0) then
+            (None, None) 
+          else
+            (Some (parsel_fn v key), None)) lst)
   with
   | Invalid_value s -> (`Error (`Invalid_value s))
   | Invalid_format s -> (`Error (`Invalid_format s))
@@ -69,25 +88,25 @@ let int_of_string_exn v key_name =
     let i64 = Int64.of_string v in
     (Int64.to_int i64)
   with
-  | Failure _ -> raise (Failure (Printf.sprintf "%s: '%s'. Int expected." key_name v))
+  | Failure _ -> raise (Invalid_format (Printf.sprintf "%s: '%s'. Int expected." key_name v))
 
 let float_of_string_exn v key_name =
   try
     (float_of_string v)
   with
-  | Failure _ -> raise (Failure (Printf.sprintf "%s: '%s'. Float expected." key_name v))
+  | Failure _ -> raise (Invalid_format (Printf.sprintf "%s: '%s'. Float expected." key_name v))
 
 let ipaddr_of_string_exn v key_name =
   try
     (Ipaddr.of_string_exn v)
   with
-  | Ipaddr.Parse_error (msg, _) -> raise (Failure (Printf.sprintf "%s: %s '%s'. IPv4 or IPv6 address expected." key_name msg v))
+  | Ipaddr.Parse_error (msg, _) -> raise (Invalid_format (Printf.sprintf "%s: %s '%s'. IPv4 or IPv6 address expected." key_name msg v))
 
 let dns_name_of_string_exn v key_name =
   try
     (Dns.Name.of_string v)
   with
-  | Dns.Name.BadDomainName _ -> raise (Failure (Printf.sprintf "%s: '%s'. Domain name expected." key_name v))
+  | Dns.Name.BadDomainName _ -> raise (Invalid_format (Printf.sprintf "%s: '%s'. Domain name expected." key_name v))
 
 let file_name_of_string_exn v key_name =
   let exists = Sys.file_exists v in
