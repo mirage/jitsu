@@ -70,9 +70,9 @@ We should now be able to start Jitsu to manage the unikernel:
 sudo jitsu -x libxl dns=www.example.org,ip=10.0.0.1,kernel=mirage-www.xen,memory=64000,name=www,nic=br0
 ```
 
-This command boots the unikernel when `www.example.org` is resolved. The IP 10.0.0.1 is returned to clients that resolve the domain and the unikernel that is booted is in the file `mirage-www.xen`. The VM is given 64MB of memory and access to the network bridge at `br0`. 
+This command boots the unikernel when `www.example.org` is resolved. The IP 10.0.0.1 is returned to clients that resolve the domain and the booted unikernel is in `mirage-www.xen`. The VM is given 64MB of memory and access to a network bridge at `br0`. 
 
-If everything worked, Jitsu should be running a DNS server on localhost. To verify that the domain is automatically started you can run `host` to resolve the domain:
+If everything worked, Jitsu should now be running a DNS server on localhost. To verify that the domain is automatically started you can run `host` to resolve the domain:
 
 ```
 host www.example.org 127.0.0.1
@@ -84,11 +84,11 @@ Aliases:
 www.example.org has address 10.0.0.1
 ```
 
-You should now be able to open the web page on 10.0.0.1 (or telnet to port 80) and ping the IP.
+After running `host` you should be able to open the web page on 10.0.0.1 (or telnet to port 80) and ping the IP.
 
 The unikernel is automatically destroyed after the DNS cache entry expires. This timeout can be set with the `--ttl` parameter. See `jitsu --help` for a full list of available parameters and options that can be passed to the `libxl` backend.
 
-### Example: Manage a rump kernel ###
+### Example: Manage an Nginx rump kernel ###
 
 [Rump kernels](https://github.com/rumpkernel/wiki/wiki/Tutorial%3A-Getting-Started) can also be managed by Jitsu, but currently only with the `libxl` backend. Prior to running Jitsu, the [rumprun](https://github.com/rumpkernel/rumprun) tool must be used to generate a JSON configuration file that is passed to Jitsu using the `rump_config` parameter.
 
@@ -98,7 +98,7 @@ A tutorial for building a unikernel that hosts a static web page in QEMU is avai
 sudo rumprun -T tmp xen -M 64 -i -b images/stubetc.iso,/etc -b images/data.iso,/data -I mynet,xenif,bridge=br0 -W mynet,inet,static,10.0.0.1/24,10.0.1.1  -- nginx.bin -c /data/conf/nginx.conf
 ```
 
-The command above will boot a rump kernel that mounts two disks (stubetc.iso and data.iso), connect it to the network bridge `br0` and give it the IP 10.0.0.1. The `-T` parameter saves the generated configuration files in the `tmp` directory. Verify that the unikernel booted correctly by running `sudo xl list`. You can also attach to the console with `sudo xl console [name of unikernel]`. To stop the unikernel, use `sudo xl destroy [name of unikernel]`.
+The command above will boot a rump kernel that mounts two disks (stubetc.iso and data.iso), connect it to the network bridge `br0` and give it the IP 10.0.0.1. The `-T` parameter saves the generated configuration files in the `tmp` directory. You can verify that the unikernel booted correctly by running `sudo xl list`. You can also attach to the console with `sudo xl console [name of unikernel]`. To stop the unikernel, use `sudo xl destroy [name of unikernel]`.
 
 If the unikernel booted correctly we should now be able to use the file `tmp/json.conf` to boot the rump kernel in Jitsu.
 
@@ -106,7 +106,9 @@ If the unikernel booted correctly we should now be able to use the file `tmp/jso
 jitsu -x libxl dns=www.example.org,memory=64000,ip=10.0.0.1,name=rump,kernel=nginx.bin,disk=images/stubetc.iso@xvda,disk=/images/data.iso@xvdb,nic=br0,rump_config=tmp/json.cfg 
 ```
 
-Verify that the unikernel boots correctly by running `host www.example.org 127.0.0.1`. You should then be able to access the web server on IP 10.0.0.1.
+Verify that the unikernel boots in Jitsu by running `host www.example.org 127.0.0.1`. An Nginx web server should now be running in a rump kernel on IP 10.0.0.1.
+
+Note that rump kernels take longer to boot than MirageOS unikernels. When the disks are mounted as ISO files (as in this example) the boot time can be more than a second. The `-d` parameter can be used to delay the DNS response to compensate for this. See `jitsu --help` for a full list of available options.
 
 ### Example: Suspend/resume Linux VMs in Virtualbox with libvirt ###
 Jitsu can be used to control VMs in Virtualbox with libvirt. Note that how well this will work depends on how quickly the VM is able to respond to requests after resuming from suspend (see also the `-d` parameter for how to delay the DNS response).
