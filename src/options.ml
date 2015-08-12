@@ -41,7 +41,7 @@ let get_list config key parse_fn =
   | Invalid_format s -> (`Error (`Invalid_format s))
   | Not_found -> (`Error (`Required_key_not_found key))
 
-let get_tuple_list config key ?sep:(sep=':') parsel_fn parser_fn =
+let get_tuple_list config key ?sep:(sep='@') parsel_fn parser_fn =
   try
     let lst = List.rev (Hashtbl.find_all config key) in (* find_all returns inserted keys in reverse order, so reverse again *)
     `Ok (List.map (fun v ->
