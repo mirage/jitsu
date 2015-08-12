@@ -4,7 +4,7 @@ OPT=-linkpkg -g
 OCAMLOPT=ocamlopt -w A-4-44
 
 SRC=$(PWD)/src
-FILES=vm_stop_mode.ml vm_state.ml backends.mli options.ml rump.ml libvirt_backend.ml xapi_backend.ml libxl_backend.ml irmin_backend.mli dns_helpers.ml irmin_backend.ml synjitsu.mli synjitsu.ml jitsu.mli jitsu.ml
+FILES=vm_stop_mode.ml vm_state.ml backends.mli options.ml rumprun.ml libvirt_backend.ml xapi_backend.ml libxl_backend.ml irmin_backend.mli dns_helpers.ml irmin_backend.ml synjitsu.mli synjitsu.ml jitsu.mli jitsu.ml
 MAIN=main.ml
 
 TEST_SRC=$(PWD)/lib_test
