@@ -237,9 +237,13 @@ let domain_config t ~uuid ~name ~kernel ~memory ?cmdline:(cmdline=None) ?scripts
     Array.init (Array.length disks)
       (fun i ->
          let pdev_path,vdev = (Array.get disks i) in
+         let format = Xenlight.DISK_FORMAT_RAW in
+         let readwrite = 1 in
          Xenlight.Device_disk.({ (default !(t.context) ()) with
                                  pdev_path;
-                                 vdev
+                                 vdev ;
+                                 format ;
+                                 readwrite
                                })) in
   Xenlight.Domain_config.({ (default !(t.context) ()) with
                             c_info;
