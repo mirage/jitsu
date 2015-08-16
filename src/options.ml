@@ -110,14 +110,22 @@ let file_name_of_string_exn v key_name =
   | true, true -> raise (Invalid_value (Printf.sprintf "%s: '%s'. Kernel must be a file, not a directory." key_name v))
   | false, _ -> raise (Invalid_value (Printf.sprintf "%s: '%s'. File does not exist." key_name v))
 
+let bool_of_string_exn v key_name =
+  let f = [ "false" ; "0" ] in
+  let t = [ "true" ; "1" ] in
+  let v_lower = String.lowercase v in
+  if (List.mem v_lower t) then true else
+    if (List.mem v_lower f) then false else
+        raise (Invalid_format (Printf.sprintf "%s: '%s'. Invalid boolean value. Only true/false or 1/0 accepted." key_name v))
+
 let get_str config key =
   get config key (fun s _ -> s)
 
 let get_str_list config key =
   get_list config key (fun s _ -> s)
 
-let get_str_tuple_list config key =
-  get_tuple_list config key (fun s _ -> s) (fun s _ -> s)
+let get_str_tuple_list config key ?sep () =
+  get_tuple_list config key ?sep (fun s _ -> s) (fun s _ -> s)
 
 let get_ipaddr config key =
   get config key ipaddr_of_string_exn
@@ -148,3 +156,9 @@ let get_file_name config key =
 
 let get_file_name_list config key =
   get_list config key file_name_of_string_exn
+
+let get_bool config key =
+  get config key bool_of_string_exn
+
+let get_bool_list config key =
+  get_list config key bool_of_string_exn
