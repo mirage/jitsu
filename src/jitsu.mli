@@ -61,4 +61,7 @@ module Make :
     val string_of_error: Backends.error -> string
     (** Convert backend error to string *)
 
+    val output_stats: t -> ?vm_uuids:(Uuidm.t list option) -> unit -> unit Lwt.t
+    (** Output stats for a list of UUIDs *)
+
   end

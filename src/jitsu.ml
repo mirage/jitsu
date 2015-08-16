@@ -136,7 +136,7 @@ module Make (Vm_backend : Backends.VM_BACKEND) = struct
             try
               or_vm_backend_error "Unable to get dom ID of VM" (Vm_backend.get_domain_id t.vm_backend) vm_uuid >>= fun domid ->
               Xenstore.wait_by_domid domid k ~timeout:1.0 () >>= function
-              | `Ok  -> Lwt.return_unit
+              | `Ok  -> t.log (Printf.sprintf "Key %s appeared in Xenstore - domain %s (domid=%d) ready." k (Uuidm.to_string vm_uuid) domid) ; Lwt.return_unit
               | `Timeout -> t.log (Printf.sprintf "Timed out while waiting for key %s to appear in Xenstore. Sending DNS reply anyway." k); Lwt.return_unit
             with
             | Failure msg -> t.log (Printf.sprintf "Unable to get domain ID and wait for key to appear in Xenstore. Sending DNS reply anyway. Error:\n%s" msg); Lwt.return_unit
@@ -177,7 +177,10 @@ module Make (Vm_backend : Backends.VM_BACKEND) = struct
       t.log " --! VM cannot be started from this state.";
       Lwt.return_unit
 
-  let output_stats t vm_uuids =
+  let output_stats t ?vm_uuids:(vm_uuids=None) () =
+    (match vm_uuids with
+    | None -> Irmin_backend.get_vm_list t.storage
+    | Some l -> Lwt.return l) >>= fun vm_uuids ->
     let current_time = Unix.time () in
     let ip_option_to_string ip_option =
       match ip_option with
@@ -190,13 +193,19 @@ module Make (Vm_backend : Backends.VM_BACKEND) = struct
       | Some f -> (string_of_float ( f -. current_time )) ^ " ago"
     in
     Lwt_list.iter_s (fun vm_uuid ->
-        let fmt = format_of_string "%40s %15s %10s %10s %10s %10s %10s %8s %30s %15s %8s %8s %8s" in
+        let fmt = format_of_string "%40s %15s %10s %10s %8s %10s %10s %10s %30s %15s %8s %8s %8s" in
         (* print titles *)
-        t.log (Printf.sprintf fmt "uuid" "name" "state" "delay" "start_time" "tot_starts" "stop_mode" "synj." "DNS" "IP" "TTL" "tot_req" "last_req");
+        t.log (Printf.sprintf fmt "uuid" "name" "state" "delay" "synj." "start_time" "tot_starts" "stop_mode" "DNS" "IP" "TTL" "tot_req" "last_req");
         get_vm_state t vm_uuid >>= fun vm_state ->
         get_vm_name t vm_uuid >>= fun vm_name ->
         Irmin_backend.get_ip t.storage ~vm_uuid >>= fun vm_ip ->
         Irmin_backend.get_response_delay t.storage ~vm_uuid >>= fun response_delay ->
+        Irmin_backend.get_wait_for_key t.storage ~vm_uuid >>= fun wait_for_key ->
+        let response_delay_str =
+            match wait_for_key with
+            | None -> (string_of_float response_delay)
+            | Some _ -> (Printf.sprintf "wait+%s" (string_of_float response_delay))
+        in
         Irmin_backend.get_start_timestamp t.storage ~vm_uuid >>= fun start_ts ->
         Irmin_backend.get_total_starts t.storage ~vm_uuid >>= fun total_starts ->
         Irmin_backend.get_stop_mode t.storage ~vm_uuid >>= fun stop_mode ->
@@ -211,11 +220,11 @@ module Make (Vm_backend : Backends.VM_BACKEND) = struct
                      (Uuidm.to_string vm_uuid)
                      vm_name
                      (Vm_state.to_string vm_state)
-                     (string_of_float response_delay)
+                     (response_delay_str)
+                     (string_of_bool synjitsu)
                      (ts start_ts)
                      (string_of_int total_starts)
                      (Vm_stop_mode.to_string stop_mode)
-                     (string_of_bool synjitsu)
                      (Dns.Name.to_string dns_name)
                      (ip_option_to_string vm_ip)
                      (string_of_int ttl)
@@ -228,11 +237,11 @@ module Make (Vm_backend : Backends.VM_BACKEND) = struct
                    (Uuidm.to_string vm_uuid)
                    vm_name
                    (Vm_state.to_string vm_state)
-                   (string_of_float response_delay)
+                   (response_delay_str)
+                   (string_of_bool synjitsu)
                    (ts start_ts)
                    (string_of_int total_starts)
                    (Vm_stop_mode.to_string stop_mode)
-                   (string_of_bool synjitsu)
                    "(none)" "" "" "" "");
         Lwt.return_unit) vm_uuids
 
@@ -318,7 +327,7 @@ module Make (Vm_backend : Backends.VM_BACKEND) = struct
               | None -> Lwt.return_none (* no ip, no result to return *)
               | Some ip ->
                 start_vm t vm_uuid >>= fun () ->
-                output_stats t [vm_uuid] >>= fun () ->
+                output_stats t ~vm_uuids:(Some [vm_uuid]) () >>= fun () ->
                 Lwt.return (Some ip)
             ) matching_vm_uuids >>= fun list_of_ips ->
           if (List.length list_of_ips) = 0 then begin

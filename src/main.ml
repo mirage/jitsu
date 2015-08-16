@@ -243,8 +243,8 @@ let jitsu backend connstr bindaddr bindport forwarder forwardport response_delay
                    end
                end
            ) in
-           Lwt_list.iter_s add_with_config map_domain
-           >>= fun () ->
+           Lwt_list.iter_s add_with_config map_domain >>= fun () ->
+           Jitsu.output_stats t () >>= fun () ->
            log (Printf.sprintf "Starting DNS server on %s:%d..." bindaddr bindport);
            try_lwt
              let processor = ((Dns_server.processor_of_process (Jitsu.process t))
