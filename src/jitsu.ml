@@ -107,9 +107,8 @@ module Make (Vm_backend : Backends.VM_BACKEND) = struct
       Irmin_backend.inc_total_starts t.storage ~vm_uuid
     in
     let notify_synjitsu () =
-      t.log "jitsu jitsu" ;
       match t.synjitsu with
-      | None -> t.log "no jitsu" ;  Lwt.return_unit (* synjitsu not configured *)
+      | None -> Lwt.return_unit (* synjitsu not configured *)
       | Some s -> begin
           Irmin_backend.get_ip t.storage ~vm_uuid >>= fun r ->
           or_vm_backend_error "Unable to get MAC for VM" (Vm_backend.get_mac t.vm_backend) vm_uuid >>= fun vm_mac ->
@@ -258,8 +257,10 @@ module Make (Vm_backend : Backends.VM_BACKEND) = struct
 
   (** Process function for ocaml-dns. Starts new VMs from DNS queries or
       forwards request to a fallback resolver *)
-  let process t ~src:_ ~dst:_ packet =
-    t.log "process";
+  let process t ~src ~dst packet =
+    let (src,sport) = src in
+    let (dst,dport) = dst in
+    t.log (Printf.sprintf "dns: Query from %s:%d to %s:%d" (Ipaddr.to_string src) sport (Ipaddr.to_string dst) dport);
     Irmin_backend.get_dns_db t.storage >>= fun dns_db ->
     let open Packet in
     match packet.questions with

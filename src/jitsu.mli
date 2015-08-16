@@ -35,7 +35,11 @@ module Make :
         where vm_count is the initial size of the hash table and use_synjitsu is the optional
         name or uuid of a synjitsu unikernel. *)
 
-    val process: t -> Dns.Packet.t Dns_server.process
+    val process: t -> 
+        src:Dns_server.ip_endpoint -> 
+        dst:Dns_server.ip_endpoint -> 
+        Dns.Packet.t -> 
+        Dns.Query.answer option Lwt.t
     (** Process function for ocaml-dns. Starts new VMs from DNS queries or
         forwards request to a fallback resolver *)
 
