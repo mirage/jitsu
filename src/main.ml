@@ -144,10 +144,12 @@ let or_abort f =
 let or_warn msg f =
   try f () with
   | Failure m -> (log (Printf.sprintf "Warning: %s\nReceived exception: %s" msg m)); ()
+  | e -> (log (Printf.sprintf "Warning: Unhandled exception: %s" (Printexc.to_string e))); ()
 
 let or_warn_lwt msg f =
   try f () with
   | Failure m -> (log (Printf.sprintf "Warning: %s\nReceived exception: %s" msg m)); Lwt.return_unit
+  | e -> (log (Printf.sprintf "Warning: Unhandled exception: %s" (Printexc.to_string e))); Lwt.return_unit
 
 let backend =
   let doc =
@@ -223,7 +225,7 @@ let jitsu backend connstr bindaddr bindport forwarder forwardport response_delay
                    end
                end
            ) in
-           Lwt_list.iter_p add_with_config map_domain
+           Lwt_list.iter_s add_with_config map_domain
            >>= fun () ->
            log (Printf.sprintf "Starting DNS server on %s:%d..." bindaddr bindport);
            try_lwt
