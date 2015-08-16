@@ -98,12 +98,19 @@ let hashtbl_of_list lst =
           Hashtbl.add tbl key v) value_list) lst;
   tbl
 
-let add_vm t ~vm_uuid ~vm_ip ~vm_stop_mode ~response_delay ~vm_config =
+let add_vm t ~vm_uuid ~vm_ip ~vm_stop_mode ~response_delay ~wait_for_key ~use_synjitsu ~vm_config =
   let it = t.connection in
   let path = [ "jitsu" ; "vm" ; (Uuidm.to_string vm_uuid) ] in
   Irmin.update (it "Registering VM stop mode")       (path @ [ "stop_mode" ]) (Vm_stop_mode.to_string vm_stop_mode) >>= fun () ->
   Irmin.update (it "Registering VM response delay")  (path @ [ "response_delay" ]) (string_of_float response_delay) >>= fun () ->
   Irmin.update (it "Registering VM IP")              (path @ [ "ip" ]) (Ipaddr.V4.to_string vm_ip) >>= fun () ->
+  let wait_for_key =
+    match wait_for_key with
+    | None -> ""
+    | Some s -> s
+  in
+  Irmin.update (it "Registering VM Xenstore wait key")    (path @ [ "wait_for_key" ]) wait_for_key >>= fun () ->
+  Irmin.update (it "Registering VM Synjitsu mode")    (path @ [ "use_synjitsu" ]) (string_of_bool use_synjitsu) >>= fun () ->
   let path = path @ [ "config" ] in
   let config_list = list_of_hashtbl vm_config in
   Lwt_list.iter_s (fun row ->
@@ -129,6 +136,28 @@ let set_stop_mode t ~vm_uuid stop_mode =
   let it = t.connection in
   let path = [ "jitsu" ; "vm" ; (Uuidm.to_string vm_uuid) ] in
   Irmin.update (it "Set stop mode") (path @ [ "stop_mode" ]) (Vm_stop_mode.to_string stop_mode)
+
+let get_use_synjitsu t ~vm_uuid =
+  let it = t.connection in
+  let path = [ "jitsu" ; "vm" ; (Uuidm.to_string vm_uuid) ] in
+  Irmin.read (it "Get VM Synjitsu mode") (path @ [ "use_synjitsu" ]) >>= fun r ->
+  match r with
+  | None -> Lwt.return false
+  | Some s ->
+    try
+      if s = "1" then Lwt.return_true else
+      if s = "0" then Lwt.return_false else
+        Lwt.return (bool_of_string s)
+    with
+    | Invalid_argument _ -> Lwt.return_false
+
+let get_wait_for_key t ~vm_uuid =
+  let it = t.connection in
+  let path = [ "jitsu" ; "vm" ; (Uuidm.to_string vm_uuid) ] in
+  Irmin.read (it "Get Xenstore wait key") (path @ [ "wait_for_key" ]) >>= fun r ->
+  match r with
+  | None -> Lwt.return_none
+  | Some s -> if s = "" then Lwt.return_none else Lwt.return (Some s)
 
 let get_ip t ~vm_uuid =
   let it = t.connection in

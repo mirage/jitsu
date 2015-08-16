@@ -25,7 +25,7 @@ val get_dns_db : t -> Dns.Loader.db Lwt.t
 val add_vm_dns : t -> vm_uuid:Uuidm.t -> dns_name:Dns.Name.t -> dns_ttl:int -> unit Lwt.t
 (** Add DNS record for VM *)
 
-val add_vm : t -> vm_uuid:Uuidm.t -> vm_ip:Ipaddr.V4.t -> vm_stop_mode:Vm_stop_mode.t -> response_delay:float -> vm_config:(string,string) Hashtbl.t -> unit Lwt.t
+val add_vm : t -> vm_uuid:Uuidm.t -> vm_ip:Ipaddr.V4.t -> vm_stop_mode:Vm_stop_mode.t -> response_delay:float -> wait_for_key:string option -> use_synjitsu:bool -> vm_config:(string,string) Hashtbl.t -> unit Lwt.t
 (** Add a new VM *)
 
 val get_vm_config : t -> vm_uuid:Uuidm.t -> (string, string) Hashtbl.t Lwt.t
@@ -78,6 +78,12 @@ val get_ip : t -> vm_uuid:Uuidm.t -> Ipaddr.V4.t option Lwt.t
 
 val set_ip : t -> vm_uuid:Uuidm.t -> Ipaddr.V4.t -> unit Lwt.t
 (** Set VM IP *)
+
+val get_wait_for_key : t -> vm_uuid:Uuidm.t -> string option Lwt.t
+(** Get key to wait for in Xenstore before returning DNS response *)
+
+val get_use_synjitsu : t -> vm_uuid:Uuidm.t -> bool Lwt.t
+(** Get synjitsu mode *)
 
 val get_vm_list : t -> Uuidm.t list Lwt.t
 (** Get list of registered VMs *)

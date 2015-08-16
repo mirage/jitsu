@@ -115,8 +115,8 @@ let bool_of_string_exn v key_name =
   let t = [ "true" ; "1" ] in
   let v_lower = String.lowercase v in
   if (List.mem v_lower t) then true else
-    if (List.mem v_lower f) then false else
-        raise (Invalid_format (Printf.sprintf "%s: '%s'. Invalid boolean value. Only true/false or 1/0 accepted." key_name v))
+  if (List.mem v_lower f) then false else
+    raise (Invalid_format (Printf.sprintf "%s: '%s'. Invalid boolean value. Only true/false or 1/0 accepted." key_name v))
 
 let get_str config key =
   get config key (fun s _ -> s)

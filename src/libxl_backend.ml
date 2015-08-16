@@ -337,7 +337,7 @@ let start_vm t uuid config =
               | None -> []
               | Some s -> s) in
             let disks = (
-              let lst = Options.(optional (get_str_tuple_list config "disk")) in
+              let lst = Options.(optional (get_str_tuple_list config "disk" ())) in
               match lst with
               | None -> []
               | Some s -> s) in
