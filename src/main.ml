@@ -149,7 +149,7 @@ let or_warn msg f =
   | e -> (log (Printf.sprintf "Warning: Unhandled exception: %s" (Printexc.to_string e))); ()
 
 let or_warn_lwt msg f =
-  try f () with
+  try_lwt f () with
   | Failure m -> (log (Printf.sprintf "Warning: %s\nReceived exception: %s" msg m)); Lwt.return_unit
   | e -> (log (Printf.sprintf "Warning: Unhandled exception: %s" (Printexc.to_string e))); Lwt.return_unit
 
