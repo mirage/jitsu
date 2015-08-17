@@ -179,8 +179,8 @@ module Make (Vm_backend : Backends.VM_BACKEND) = struct
 
   let output_stats t ?vm_uuids:(vm_uuids=None) () =
     (match vm_uuids with
-    | None -> Irmin_backend.get_vm_list t.storage
-    | Some l -> Lwt.return l) >>= fun vm_uuids ->
+     | None -> Irmin_backend.get_vm_list t.storage
+     | Some l -> Lwt.return l) >>= fun vm_uuids ->
     let current_time = Unix.time () in
     let ip_option_to_string ip_option =
       match ip_option with
@@ -202,9 +202,9 @@ module Make (Vm_backend : Backends.VM_BACKEND) = struct
         Irmin_backend.get_response_delay t.storage ~vm_uuid >>= fun response_delay ->
         Irmin_backend.get_wait_for_key t.storage ~vm_uuid >>= fun wait_for_key ->
         let response_delay_str =
-            match wait_for_key with
-            | None -> (string_of_float response_delay)
-            | Some _ -> (Printf.sprintf "wait+%s" (string_of_float response_delay))
+          match wait_for_key with
+          | None -> (string_of_float response_delay)
+          | Some _ -> (Printf.sprintf "wait+%s" (string_of_float response_delay))
         in
         Irmin_backend.get_start_timestamp t.storage ~vm_uuid >>= fun start_ts ->
         Irmin_backend.get_total_starts t.storage ~vm_uuid >>= fun total_starts ->
@@ -327,7 +327,7 @@ module Make (Vm_backend : Backends.VM_BACKEND) = struct
               | None -> Lwt.return_none (* no ip, no result to return *)
               | Some ip ->
                 start_vm t vm_uuid >>= fun () ->
-                    Lwt.async ( fun () -> output_stats t ~vm_uuids:(Some [vm_uuid]) ());
+                Lwt.async ( fun () -> output_stats t ~vm_uuids:(Some [vm_uuid]) ());
                 Lwt.return (Some ip)
             ) matching_vm_uuids >>= fun list_of_ips ->
           if (List.length list_of_ips) = 0 then begin
