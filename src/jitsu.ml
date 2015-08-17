@@ -135,7 +135,7 @@ module Make (Vm_backend : Backends.VM_BACKEND) = struct
         | Some k -> begin
             try
               or_vm_backend_error "Unable to get dom ID of VM" (Vm_backend.get_domain_id t.vm_backend) vm_uuid >>= fun domid ->
-              Xenstore.wait_by_domid domid k ~timeout:1.0 () >>= function
+              Xenstore.wait_by_domid domid k ~timeout:2.0 () >>= function
               | `Ok  -> t.log (Printf.sprintf "Key %s appeared in Xenstore - domain %s (domid=%d) ready." k (Uuidm.to_string vm_uuid) domid) ; Lwt.return_unit
               | `Timeout -> t.log (Printf.sprintf "Timed out while waiting for key %s to appear in Xenstore. Sending DNS reply anyway." k); Lwt.return_unit
             with
@@ -192,10 +192,10 @@ module Make (Vm_backend : Backends.VM_BACKEND) = struct
       | None -> "Never"
       | Some f -> (string_of_float ( f -. current_time )) ^ " ago"
     in
+    let fmt = format_of_string "%40s %15s %10s %10s %8s %10s %10s %10s %30s %15s %8s %8s %8s" in
+    (* print titles *)
+    t.log (Printf.sprintf fmt "uuid" "name" "state" "delay" "synj." "start_time" "tot_starts" "stop_mode" "DNS" "IP" "TTL" "tot_req" "last_req");
     Lwt_list.iter_s (fun vm_uuid ->
-        let fmt = format_of_string "%40s %15s %10s %10s %8s %10s %10s %10s %30s %15s %8s %8s %8s" in
-        (* print titles *)
-        t.log (Printf.sprintf fmt "uuid" "name" "state" "delay" "synj." "start_time" "tot_starts" "stop_mode" "DNS" "IP" "TTL" "tot_req" "last_req");
         get_vm_state t vm_uuid >>= fun vm_state ->
         get_vm_name t vm_uuid >>= fun vm_name ->
         Irmin_backend.get_ip t.storage ~vm_uuid >>= fun vm_ip ->
@@ -327,7 +327,7 @@ module Make (Vm_backend : Backends.VM_BACKEND) = struct
               | None -> Lwt.return_none (* no ip, no result to return *)
               | Some ip ->
                 start_vm t vm_uuid >>= fun () ->
-                output_stats t ~vm_uuids:(Some [vm_uuid]) () >>= fun () ->
+                    Lwt.async ( fun () -> output_stats t ~vm_uuids:(Some [vm_uuid]) ());
                 Lwt.return (Some ip)
             ) matching_vm_uuids >>= fun list_of_ips ->
           if (List.length list_of_ips) = 0 then begin
