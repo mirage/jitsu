@@ -1,6 +1,6 @@
 # Just-In-Time Summoning of Unikernels #
 
-*Jitsu is experimental software. See [LICENSE](#license) for conditions*
+*Jitsu is experimental software. See [LICENSE](#license) for conditions.*
 
 Jitsu is a forwarding DNS server that automatically boots [unikernels](http://wiki.xenproject.org/wiki/Unikernels) on demand. When a DNS query is received, Jitsu first checks for a local unikernel that is mapped to the requested domain. If a unikernel is found, the unikernel is started and its IP is returned to the client. Otherwise, the request is forwarded to the next DNS server. If no DNS requests are received for the unikernel within a given timeout period it is automatically stopped. 
 
@@ -13,6 +13,8 @@ Jitsu supports several backends to manage the unikernel VMs. Currently [libvirt]
  - Latest release: https://github.com/mirage/jitsu/releases
  - Bugtracker: https://github.com/mirage/jitsu/issues
  - Development version: https://github.com/mirage/jitsu
+
+[![Build Status](https://travis-ci.org/mirage/jitsu.svg)](https://travis-ci.org/mirage/jitsu)
 
 #### Overview ####
 
