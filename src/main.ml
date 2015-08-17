@@ -30,14 +30,16 @@ let info =
     List.map (fun x ->
         let (k,v) = x in
         `I ((Printf.sprintf "$(b,%s)" k), v)) l in
-  let man = [
-    `S "LIBVIRT CONFIGURATION"
-  ] @ (list_options Libvirt_backend.get_config_option_list) @ [
-      `S "XAPI CONFIGURATION" ;
-    ] @ (list_options Xapi_backend.get_config_option_list) @ [
-      `S "LIBXL CONFIGURATION" ;
-    ] @ (list_options Libxl_backend.get_config_option_list) @ [
-      `S "EXAMPLES";
+  let common_options =
+    [ ("response_delay", "Override default DNS query response delay for this unikernel. See also -d.") ;
+      ("wait_for_key", "Wait for this key to appear in Xenstore before responding to the DNS query. Sleeps for [response_delay] after the key appears. The key should be relative to /local/domain/[domid]/.") ;
+      ("use_synjitsu", "Enable Synjitsu for this domain if not 0 or absent (requires Synjitsu support enabled)") ] in
+  let man =
+    [ `S "COMMON CONFIGURATION" ] @ (list_options common_options) @
+    [ `S "LIBVIRT CONFIGURATION" ] @ (list_options Libvirt_backend.get_config_option_list) @
+    [ `S "XAPI CONFIGURATION" ] @ (list_options Xapi_backend.get_config_option_list) @
+    [ `S "LIBXL CONFIGURATION" ] @ (list_options Libxl_backend.get_config_option_list) @
+    [ `S "EXAMPLES";
       `P "$(b,jitsu -c xen:/// -f 8.8.8.8 dns=mirage.io,ip=10.0.0.1,vm=mirage-www)" ;
       `P "Connect to Xen via libvirt. Start unikernel $(b,mirage-www) on requests for $(b,mirage.io) and \
           return IP $(b,10.0.0.1) in DNS. Forward unknown requests to \
@@ -144,10 +146,12 @@ let or_abort f =
 let or_warn msg f =
   try f () with
   | Failure m -> (log (Printf.sprintf "Warning: %s\nReceived exception: %s" msg m)); ()
+  | e -> (log (Printf.sprintf "Warning: Unhandled exception: %s" (Printexc.to_string e))); ()
 
 let or_warn_lwt msg f =
   try f () with
   | Failure m -> (log (Printf.sprintf "Warning: %s\nReceived exception: %s" msg m)); Lwt.return_unit
+  | e -> (log (Printf.sprintf "Warning: Unhandled exception: %s" (Printexc.to_string e))); Lwt.return_unit
 
 let backend =
   let doc =
@@ -202,7 +206,7 @@ let jitsu backend connstr bindaddr bindport forwarder forwardport response_delay
      | `Error e -> raise (Failure (Printf.sprintf "Unable to connect to backend: %s" (Jitsu.string_of_error e)))
      | `Ok backend_t ->
        or_abort (fun () -> Jitsu.create backend_t log forward_resolver ~synjitsu ~persistdb ()) >>= fun t ->
-       Lwt.choose [(
+       Lwt.pick [(
            (* main thread, DNS server *)
            let add_with_config config_array = (
              let vm_config = (Hashtbl.create (Array.length config_array)) in
@@ -210,6 +214,22 @@ let jitsu backend connstr bindaddr bindport forwarder forwardport response_delay
              let dns_name = Options.get_dns_name vm_config "dns" in
              let vm_name = Options.get_str vm_config "name" in
              let vm_ip = Options.get_ipaddr vm_config "ip" in
+             let response_delay =  (* override default response_delay if key set in config *)
+               match (Options.get_float vm_config "response_delay") with
+               | `Error _ -> response_delay
+               | `Ok d -> d
+             in
+             let use_synjitsu =
+               match (Options.get_bool vm_config "use_synjitsu"), synjitsu with
+               | `Error _, _
+               | `Ok _, None -> false (* default to false if use_synjitsu is not set or synjitsu is not enabled *)
+               | `Ok v, Some _ -> v
+             in
+             let wait_for_key =
+               match Options.get_str vm_config "wait_for_key" with
+               | `Error _ -> None
+               | `Ok v -> Some v
+             in
              match dns_name, vm_name, vm_ip with
              | `Error e, _, _
              | _, `Error e, _
@@ -219,12 +239,12 @@ let jitsu backend connstr bindaddr bindport forwarder forwardport response_delay
                  | None -> raise (Failure (Printf.sprintf "Only IPv4 is supported. %s is not a valid IPv4 address." (Ipaddr.to_string vm_ip)))
                  | Some vm_ip -> begin
                      log (Printf.sprintf "Adding domain '%s' for VM '%s' with ip %s" (Dns.Name.to_string dns_name) vm_name (Ipaddr.V4.to_string vm_ip));
-                     or_abort (fun () -> Jitsu.add_vm t ~dns_names:[dns_name] ~vm_ip ~vm_stop_mode ~response_delay ~dns_ttl:ttl ~vm_config)
+                     or_abort (fun () -> Jitsu.add_vm t ~dns_names:[dns_name] ~vm_ip ~vm_stop_mode ~response_delay ~wait_for_key ~use_synjitsu ~dns_ttl:ttl ~vm_config)
                    end
                end
            ) in
-           Lwt_list.iter_p add_with_config map_domain
-           >>= fun () ->
+           Lwt_list.iter_s add_with_config map_domain >>= fun () ->
+           Jitsu.output_stats t () >>= fun () ->
            log (Printf.sprintf "Starting DNS server on %s:%d..." bindaddr bindport);
            try_lwt
              let processor = ((Dns_server.processor_of_process (Jitsu.process t))

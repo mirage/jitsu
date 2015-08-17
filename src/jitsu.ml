@@ -106,11 +106,12 @@ module Make (Vm_backend : Backends.VM_BACKEND) = struct
       Irmin_backend.set_start_timestamp t.storage ~vm_uuid (Unix.time ()) >>= fun () ->
       Irmin_backend.inc_total_starts t.storage ~vm_uuid
     in
+    Irmin_backend.get_use_synjitsu t.storage ~vm_uuid >>= fun use_synjitsu ->
     let notify_synjitsu () =
-      t.log "jitsu jitsu" ;
-      match t.synjitsu with
-      | None -> t.log "no jitsu" ;  Lwt.return_unit (* synjitsu not configured *)
-      | Some s -> begin
+      match use_synjitsu, t.synjitsu with
+      | _, None -> Lwt.return_unit (* synjitsu not configured *)
+      | false, Some _ -> Lwt.return_unit (* synjitsu disabled for domain *)
+      | true, Some s -> begin
           Irmin_backend.get_ip t.storage ~vm_uuid >>= fun r ->
           or_vm_backend_error "Unable to get MAC for VM" (Vm_backend.get_mac t.vm_backend) vm_uuid >>= fun vm_mac ->
           match r, vm_mac with
@@ -127,6 +128,28 @@ module Make (Vm_backend : Backends.VM_BACKEND) = struct
           | None, _ -> t.log (Printf.sprintf "VM %s has no IP. Synjitsu not notified." (Uuidm.to_string vm_uuid)); Lwt.return_unit
         end
     in
+    let wait () =
+      let wait_for_key =
+        Irmin_backend.get_wait_for_key t.storage ~vm_uuid >>= fun wait_key ->
+        match wait_key with
+        | Some k -> begin
+            try
+              or_vm_backend_error "Unable to get dom ID of VM" (Vm_backend.get_domain_id t.vm_backend) vm_uuid >>= fun domid ->
+              Xenstore.wait_by_domid domid k ~timeout:2.0 () >>= function
+              | `Ok  -> t.log (Printf.sprintf "Key %s appeared in Xenstore - domain %s (domid=%d) ready." k (Uuidm.to_string vm_uuid) domid) ; Lwt.return_unit
+              | `Timeout -> t.log (Printf.sprintf "Timed out while waiting for key %s to appear in Xenstore. Sending DNS reply anyway." k); Lwt.return_unit
+            with
+            | Failure msg -> t.log (Printf.sprintf "Unable to get domain ID and wait for key to appear in Xenstore. Sending DNS reply anyway. Error:\n%s" msg); Lwt.return_unit
+          end
+        | None -> Lwt.return_unit
+      in
+      let sleep =
+        Irmin_backend.get_response_delay t.storage ~vm_uuid >>= fun delay ->
+        Lwt_unix.sleep delay
+      in
+      wait_for_key >>= fun () ->
+      sleep
+    in
     match vm_state with
     | Vm_state.Running -> (* Already running, exit *)
       t.log " --! VM is already running";
@@ -136,28 +159,28 @@ module Make (Vm_backend : Backends.VM_BACKEND) = struct
       or_vm_backend_error "Unable to resume VM" (Vm_backend.resume_vm t.vm_backend) vm_uuid >>= fun () ->
       Lwt.async(notify_synjitsu);
       update_stats () >>= fun () ->
-      Irmin_backend.get_response_delay t.storage ~vm_uuid >>= fun delay ->
-      Lwt_unix.sleep delay
+      wait ()
     | Vm_state.Paused ->
       t.log " --> unpausing VM...";
       or_vm_backend_error "Unable to unpause VM" (Vm_backend.unpause_vm t.vm_backend) vm_uuid >>= fun () ->
       Lwt.async(notify_synjitsu);
       update_stats () >>= fun () ->
-      Irmin_backend.get_response_delay t.storage ~vm_uuid >>= fun delay ->
-      Lwt_unix.sleep delay
+      wait ()
     | Vm_state.Off ->
       t.log " --> creating VM...";
       Irmin_backend.get_vm_config t.storage ~vm_uuid >>= fun config ->
       or_vm_backend_error "Unable to create VM" (Vm_backend.start_vm t.vm_backend vm_uuid) config >>= fun () ->
       Lwt.async(notify_synjitsu);
       update_stats () >>= fun () ->
-      Irmin_backend.get_response_delay t.storage ~vm_uuid >>= fun delay ->
-      Lwt_unix.sleep delay
+      wait ()
     | Vm_state.Unknown ->
       t.log " --! VM cannot be started from this state.";
       Lwt.return_unit
 
-  let output_stats t vm_uuids =
+  let output_stats t ?vm_uuids:(vm_uuids=None) () =
+    (match vm_uuids with
+    | None -> Irmin_backend.get_vm_list t.storage
+    | Some l -> Lwt.return l) >>= fun vm_uuids ->
     let current_time = Unix.time () in
     let ip_option_to_string ip_option =
       match ip_option with
@@ -169,19 +192,26 @@ module Make (Vm_backend : Backends.VM_BACKEND) = struct
       | None -> "Never"
       | Some f -> (string_of_float ( f -. current_time )) ^ " ago"
     in
+    let fmt = format_of_string "%40s %15s %10s %10s %8s %10s %10s %10s %30s %15s %8s %8s %8s" in
+    (* print titles *)
+    t.log (Printf.sprintf fmt "uuid" "name" "state" "delay" "synj." "start_time" "tot_starts" "stop_mode" "DNS" "IP" "TTL" "tot_req" "last_req");
     Lwt_list.iter_s (fun vm_uuid ->
-        let fmt = format_of_string "%40s %15s %10s %10s %10s %10s %10s %30s %15s %8s %8s %8s" in
-        (* print titles *)
-        t.log (Printf.sprintf fmt "uuid" "name" "state" "delay" "start_time" "tot_starts" "stop_mode" "DNS" "IP" "TTL" "tot_req" "last_req");
         get_vm_state t vm_uuid >>= fun vm_state ->
         get_vm_name t vm_uuid >>= fun vm_name ->
         Irmin_backend.get_ip t.storage ~vm_uuid >>= fun vm_ip ->
         Irmin_backend.get_response_delay t.storage ~vm_uuid >>= fun response_delay ->
+        Irmin_backend.get_wait_for_key t.storage ~vm_uuid >>= fun wait_for_key ->
+        let response_delay_str =
+            match wait_for_key with
+            | None -> (string_of_float response_delay)
+            | Some _ -> (Printf.sprintf "wait+%s" (string_of_float response_delay))
+        in
         Irmin_backend.get_start_timestamp t.storage ~vm_uuid >>= fun start_ts ->
         Irmin_backend.get_total_starts t.storage ~vm_uuid >>= fun total_starts ->
         Irmin_backend.get_stop_mode t.storage ~vm_uuid >>= fun stop_mode ->
         (* Get list of DNS domains for this vm_name *)
         Irmin_backend.get_vm_dns_name_list t.storage ~vm_uuid >>= fun dns_name_list ->
+        Irmin_backend.get_use_synjitsu t.storage ~vm_uuid >>= fun synjitsu ->
         Lwt_list.iter_s (fun dns_name ->
             Irmin_backend.get_last_request_timestamp t.storage ~vm_uuid ~dns_name >>= fun last_request_ts ->
             Irmin_backend.get_total_requests t.storage ~vm_uuid ~dns_name >>= fun total_requests ->
@@ -190,7 +220,8 @@ module Make (Vm_backend : Backends.VM_BACKEND) = struct
                      (Uuidm.to_string vm_uuid)
                      vm_name
                      (Vm_state.to_string vm_state)
-                     (string_of_float response_delay)
+                     (response_delay_str)
+                     (string_of_bool synjitsu)
                      (ts start_ts)
                      (string_of_int total_starts)
                      (Vm_stop_mode.to_string stop_mode)
@@ -206,7 +237,8 @@ module Make (Vm_backend : Backends.VM_BACKEND) = struct
                    (Uuidm.to_string vm_uuid)
                    vm_name
                    (Vm_state.to_string vm_state)
-                   (string_of_float response_delay)
+                   (response_delay_str)
+                   (string_of_bool synjitsu)
                    (ts start_ts)
                    (string_of_int total_starts)
                    (Vm_stop_mode.to_string stop_mode)
@@ -214,9 +246,9 @@ module Make (Vm_backend : Backends.VM_BACKEND) = struct
         Lwt.return_unit) vm_uuids
 
   (* add vm to be monitored by jitsu *)
-  let add_vm t ~vm_ip ~vm_stop_mode ~dns_names ~dns_ttl ~response_delay ~vm_config =
+  let add_vm t ~vm_ip ~vm_stop_mode ~dns_names ~dns_ttl ~response_delay ~wait_for_key ~use_synjitsu ~vm_config =
     or_vm_backend_error "Unable to configure VM" (Vm_backend.configure_vm t.vm_backend) vm_config >>= fun vm_uuid ->
-    Irmin_backend.add_vm t.storage ~vm_uuid ~vm_ip ~vm_stop_mode ~response_delay ~vm_config >>= fun () ->
+    Irmin_backend.add_vm t.storage ~vm_uuid ~vm_ip ~vm_stop_mode ~response_delay ~wait_for_key ~use_synjitsu ~vm_config >>= fun () ->
     Lwt_list.iter_s (fun dns_name ->
         Irmin_backend.add_vm_dns t.storage ~vm_uuid ~dns_name ~dns_ttl
       ) dns_names
@@ -258,8 +290,10 @@ module Make (Vm_backend : Backends.VM_BACKEND) = struct
 
   (** Process function for ocaml-dns. Starts new VMs from DNS queries or
       forwards request to a fallback resolver *)
-  let process t ~src:_ ~dst:_ packet =
-    t.log "process";
+  let process t ~src ~dst packet =
+    let (src,sport) = src in
+    let (dst,dport) = dst in
+    t.log (Printf.sprintf "dns: Query from %s:%d to %s:%d" (Ipaddr.to_string src) sport (Ipaddr.to_string dst) dport);
     Irmin_backend.get_dns_db t.storage >>= fun dns_db ->
     let open Packet in
     match packet.questions with
@@ -293,7 +327,7 @@ module Make (Vm_backend : Backends.VM_BACKEND) = struct
               | None -> Lwt.return_none (* no ip, no result to return *)
               | Some ip ->
                 start_vm t vm_uuid >>= fun () ->
-                output_stats t [vm_uuid] >>= fun () ->
+                    Lwt.async ( fun () -> output_stats t ~vm_uuids:(Some [vm_uuid]) ());
                 Lwt.return (Some ip)
             ) matching_vm_uuids >>= fun list_of_ips ->
           if (List.length list_of_ips) = 0 then begin

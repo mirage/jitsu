@@ -32,6 +32,11 @@ let hashtbl =
   Hashtbl.add t "tuple_str_list" "l:r";
   Hashtbl.add t "tuple_str_list" ":";
   Hashtbl.add t "tuple_str_list" "";
+  Hashtbl.add t "bool" "0";
+  Hashtbl.add t "bool_list" "true";
+  Hashtbl.add t "bool_list" "false";
+  Hashtbl.add t "bool_list" "0";
+  Hashtbl.add t "bool_list" "1";
   t
 
 let test_get_int () =
@@ -55,6 +60,22 @@ let test_get_str_list () =
   | `Ok s -> Alcotest.(check (list string)) "string list" expected s
   | `Error e -> Alcotest.fail (Options.string_of_error e)
 
+let test_get_bool () =
+  match (Options.get_bool hashtbl "bool") with
+  | `Ok s -> if not s = false then Alcotest.fail "expected false"
+  | `Error e -> Alcotest.fail (Options.string_of_error e)
+
+let test_get_bool_list () =
+  let expected = [ true ; false ; false ; true ] in
+  match (Options.get_bool_list hashtbl "bool_list") with
+  | `Ok s -> let _ = List.map2 (fun a b ->
+      if not a=b then
+        Alcotest.fail (Printf.sprintf "Bool lists are not equal. Expected %B, got %B" a b)
+      else
+        ()) expected s in
+    ()
+  | `Error e -> Alcotest.fail (Options.string_of_error e)
+  
 let test_get_dns_name () =
   match (Options.get_dns_name hashtbl "dns_name") with
   | `Ok i -> Alcotest.(check string) "dns_name" "www.example.org" (Dns.Name.to_string i)
@@ -90,7 +111,7 @@ let test_get_str_tuple_list () =
                    (Some "l", Some "r") ;
                    (None, None) ;
                    (None, None) ] in
-  match (Options.get_str_tuple_list hashtbl "tuple_str_list") with
+  match (Options.get_str_tuple_list hashtbl "tuple_str_list" ~sep:':' ()) with
   | `Ok s -> let _ = List.map2 (fun a b ->
       if not (is_eq_tup a b) then
         Alcotest.fail (Printf.sprintf "Tuple lists are not equal. Expected %s, got %s" (t_s a) (t_s b))
@@ -106,6 +127,8 @@ let test_options =
      "get_int on string", `Quick, test_get_int_str ;
      "get_str", `Quick, test_get_str ;
      "get_str_list", `Quick, test_get_str_list ;
+     "get_bool", `Quick, test_get_bool ;
+     "get_bool_list", `Quick, test_get_bool_list ;
      "get_dns_name", `Quick, test_get_dns_name ;
      "get_str_tuple_list", `Quick, test_get_str_tuple_list ;
    ]

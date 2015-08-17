@@ -18,8 +18,6 @@
 
 open Lwt.Infix
 
-module Client = Xs_client_lwt.Client(Xs_transport_lwt_unix_client)
-
 let debug = false
 
 exception Uuid_error of string
@@ -163,24 +161,10 @@ let get_dominfo_by_domid t vm_domid =
   in
   lookup_vm_by_predicate t domid_check
 
-let safe_xs_read_by_domid domid key =
-  let path = Printf.sprintf "/local/domain/%d/%s" domid key in
-  let safe_read h k =
-    Lwt.catch
-      (fun () -> Xs.read h k >>= fun v -> Lwt.return (Some v))
-      (function Xs_protocol.Enoent _ -> Lwt.return_none | e -> raise e)
-  in
-  Xs.make () >>= fun xsc ->
-  Xs.(immediate xsc (fun h ->
-      safe_read h path
-    )) >>= function
-  | None -> Lwt.return_none
-  | Some s -> Lwt.return (Some s)
-
 let safe_xs_read_by_vm t uuid key =
   match (get_dominfo_by_uuid t uuid) with
   | None -> Lwt.return_none
-  | Some dominfo -> safe_xs_read_by_domid (dominfo.Xenlight.Dominfo.domid) key
+  | Some dominfo -> Xenstore.read_by_domid (dominfo.Xenlight.Dominfo.domid) key
 
 let blocking_xenlight f =
   (* Xenlight wants to control SIGCHILD.
@@ -264,7 +248,7 @@ let lookup_vm_by_name t vm_name =
   let domids = List.map (fun di -> di.Xenlight.Dominfo.domid) (Xenlight.Dominfo.list !(t.context)) in
   let rec loop = function
     | domid :: rest -> begin
-        safe_xs_read_by_domid domid "name" >>= fun name ->
+        Xenstore.read_by_domid domid "name" >>= fun name ->
         match name with
         | None -> loop rest
         | Some name -> if name = vm_name then
@@ -353,7 +337,7 @@ let start_vm t uuid config =
               | None -> []
               | Some s -> s) in
             let disks = (
-              let lst = Options.(optional (get_str_tuple_list config "disk")) in
+              let lst = Options.(optional (get_str_tuple_list config "disk" ())) in
               match lst with
               | None -> []
               | Some s -> s) in

@@ -24,6 +24,7 @@ depends: [  "lwt"
             "uuidm"
             "irmin-unix"
             "irmin" { >= "0.9.7" }
+            "git" { <= "1.6.2" }
             "xen-api-client"
             "xenctrl"
             "alcotest" ]
