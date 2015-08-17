@@ -5,7 +5,6 @@ sudo: required
 env:
   global:
   - ALCOTEST_SHOW_ERRORS=1
-  - PACKAGE=jitsu.0.2.0
+  - PACKAGE=jitsu
   matrix:
   - OCAML_VERSION=4.01
-  - OCAML_VERSION=4.02
