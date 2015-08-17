@@ -357,7 +357,7 @@ let start_vm t uuid config =
               match lst with
               | None -> []
               | Some s -> s) in
-            let rump_config = Options.(optional (Options.get_file_name config "rump_config")) in
+            let rumprun_config = Options.(optional (Options.get_file_name config "rumprun_config")) in
             match name, kernel, memory with
             | `Error e,_,_
             | _,`Error e,_
@@ -365,8 +365,8 @@ let start_vm t uuid config =
             | `Ok name,`Ok kernel,`Ok memory -> begin
                 let domconfig = domain_config t ~uuid ~name ~kernel ~memory ~cmdline ~scripts ~nics ~disks () in
                 let domid = Xenlight.Domain.create_new !(t.context) domconfig () in
-                (match rump_config with
-                 | Some file -> Rump.configure_from_file ~domid ~file
+                (match rumprun_config with
+                 | Some file -> Rumprun.configure_from_file ~domid ~file
                  | None -> Lwt.return `Ok)
                 >>= function
                 | `Ok -> Lwt.return (`Ok (Xenlight.Domain.unpause !(t.context) domid))
@@ -419,6 +419,6 @@ let get_config_option_list =
     ("cmdline", "Extra parameters passed to kernel (optional)") ;
     ("nic", "Network device (br0, eth0 etc). Can be set more than once to configure multiple NICs (optional)") ;
     ("script", "Virtual interface (VIF) configuration script. Can be set more than once to specify a VIF script per network device (optional)") ;
-    ("disk", "Disk to connect to the Xen VM. Format '[dom0 device/file]:[hdX/xvdX/sdX etc]'. Can be set more than once to configure multiple disks (optional)") ;
-    ("rump_config", "Path to file with rump kernel JSON config (optional)") ;
+    ("disk", "Disk to connect to the Xen VM. Format '[dom0 device or file]@[hdX/xvdX/sdX etc]'. Can be set more than once to configure multiple disks (optional)") ;
+    ("rumprun_config", "Path to file with rumprun unikernel JSON config (optional)") ;
   ]
