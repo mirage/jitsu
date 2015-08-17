@@ -1,0 +1,11 @@
+language: c
+install: wget https://raw.githubusercontent.com/ocaml/ocaml-travisci-skeleton/master/.travis-opam.sh
+script: bash -ex .travis-opam.sh
+sudo: required
+env:
+  global:
+  - ALCOTEST_SHOW_ERRORS=1
+  - PACKAGE=jitsu.0.2.0
+  matrix:
+  - OCAML_VERSION=4.01
+  - OCAML_VERSION=4.02
