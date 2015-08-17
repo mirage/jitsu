@@ -206,7 +206,7 @@ let jitsu backend connstr bindaddr bindport forwarder forwardport response_delay
      | `Error e -> raise (Failure (Printf.sprintf "Unable to connect to backend: %s" (Jitsu.string_of_error e)))
      | `Ok backend_t ->
        or_abort (fun () -> Jitsu.create backend_t log forward_resolver ~synjitsu ~persistdb ()) >>= fun t ->
-       Lwt.choose [(
+       Lwt.pick [(
            (* main thread, DNS server *)
            let add_with_config config_array = (
              let vm_config = (Hashtbl.create (Array.length config_array)) in

@@ -56,7 +56,7 @@ let wait path ?value:(value=None) ?timeout:(timeout=5.0) () =
     Lwt_unix.sleep timeout >>= fun () ->
     Lwt.return `Timeout
   in
-  Lwt.choose [
+  Lwt.pick [
     wait_for_key () ;
     wait_for_timeout () ;
   ]
