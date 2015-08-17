@@ -173,7 +173,7 @@ If virsh is unable to connect to Virtualbox, you may have to adjust the connecti
 You should now be able to start Jitsu. Use '-m suspend' to set it to suspend the VM on inactivity. Example output:
 
 ```
-$ sudo ./jitsu www.example.com,127.0.0.1,Ubuntu -m suspend -c vbox:///session
+$ sudo ./jitsu dns=www.example.com,ip=127.0.0.1,name=Ubuntu -m suspend -c vbox:///session
 Connecting to vbox:///session...
 Adding domain 'www.example.com' for VM 'Ubuntu' with ip 127.0.0.1
 Adding SOA 'example.com' with ttl=60
@@ -274,6 +274,20 @@ After 2 minutes without DNS requests, Jitsu will suspend the domain automaticall
         Which backend to use. Currently libvirt, xapi and libxl are
         supported. Xapi and libxl are less tested and should be considered
         experimental.
+
+COMMON CONFIGURATION
+    response_delay
+        Override default DNS query response delay for this unikernel. See
+        also -d.
+
+    wait_for_key
+        Wait for this key to appear in Xenstore before responding to the
+        DNS query. Sleeps for [response_delay] after the key appears. The
+        key should be relative to /local/domain/[domid]/.
+
+    use_synjitsu
+        Enable Synjitsu for this domain if not 0 or absent (requires
+        Synjitsu support enabled)
 
 LIBVIRT CONFIGURATION
     name
