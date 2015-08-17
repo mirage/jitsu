@@ -35,10 +35,10 @@ Jitsu needs the development libraries for Libvirt, Xapi and Xenlight to compile.
 $ opam depext xenctrl libvirt xen-api-client
 ```
 
-The latest release of Jitsu is not available in the main `opam` repository yet, but can be installed from `mirage-dev`. To set up `mirage-dev` and install Jitsu:
+The latest release of Jitsu is not available in the main `opam` repository yet, but can be installed by pinning the latest version:
 
 ```
-$ opam add remote mirage-dev 'https://github.com/mirage/mirage-dev.git'
+$ opam pin add jitsu 'https://github.com/mirage/jitsu.git#0.2.0'
 $ opam install jitsu
 ```
 
