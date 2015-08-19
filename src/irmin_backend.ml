@@ -62,6 +62,7 @@ let create ?persist:(persist=true) ?root:(root="irmin/test") ?log:(log=default_l
     | true -> Irmin.basic (module Irmin_git.FS) (module Irmin.Contents.String)
     | false -> Irmin.basic (module Irmin_git.Memory) (module Irmin.Contents.String)
   in
+  let task msg = Irmin.Task.create ~date:(Int64.of_float (Unix.gettimeofday ())) ~owner:"jitsu" msg in
   Irmin.create store config task >>= fun connection ->
   let dns_cache = Dns.Loader.new_db () in (* Start with empty DNS db *)
   let dns_cache_dirty = false in
