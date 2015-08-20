@@ -302,13 +302,15 @@ module Make (Vm_backend : Backends.VM_BACKEND) = struct
         let answer = Query.(answer q.q_name q.q_type dns_db.Loader.trie) in
         match answer.Query.rcode with
         | Packet.NoError ->
-          t.log (Printf.sprintf "dns: local match for domain %s" (Name.to_string q.q_name));
+          let q_name_str = Name.to_string q.q_name in
+          let q_name_str_lower = String.lowercase q_name_str in
+          t.log (Printf.sprintf "dns: local match for domain %s" q_name_str);
           (* look for vms in irmin that have the dns domain registered *)
           Irmin_backend.get_vm_list t.storage >>= fun vm_list ->
           Lwt_list.filter_map_s (fun vm_uuid ->
               Irmin_backend.get_vm_dns_name_list t.storage ~vm_uuid >>= fun dns_name_list ->
               Lwt_list.filter_map_s (fun dns_name ->
-                  if dns_name = q.q_name then (* we found a match, update stats and add to list *)
+                  if ((String.lowercase (Name.to_string dns_name)) = q_name_str_lower) then (* we found a match, update stats and add to list *)
                     Irmin_backend.inc_total_requests t.storage ~vm_uuid ~dns_name >>= fun () ->
                     Irmin_backend.set_last_request_timestamp t.storage ~vm_uuid ~dns_name (Unix.time()) >>= fun () ->
                     t.log (Printf.sprintf "dns: matching VM is %s (dns=%s)" (Uuidm.to_string vm_uuid) (Dns.Name.to_string dns_name));

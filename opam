@@ -5,6 +5,7 @@ authors: "Magnus Skjegstad <magnus@skjegstad.com>"
 homepage: "https://github.com/mirage/jitsu"
 bug-reports: "https://github.com/mirage/jitsu/issues/"
 dev-repo: "https://github.com/mirage/jitsu.git"
+license: "ISC"
 build: [
   [make]
 ]
@@ -24,7 +25,7 @@ depends: [  "lwt"
             "uuidm"
             "irmin-unix"
             "irmin" { >= "0.9.7" }
-            "git" { <= "1.6.2" }
+            "git"
             "xen-api-client"
             "xenctrl"
             "alcotest" ]
