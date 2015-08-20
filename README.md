@@ -35,17 +35,16 @@ Jitsu needs the development libraries for Libvirt, Xapi and Xenlight to compile.
 $ opam depext xenctrl libvirt xen-api-client
 ```
 
-The latest release of Jitsu is not available in the main `opam` repository yet, but can be installed by pinning the latest version:
+The latest release of Jitsu is available in `opam`. To install:
 
 ```
-$ opam pin add jitsu 'https://github.com/mirage/jitsu.git#0.2.0'
 $ opam install jitsu
 ```
 
 To install the latest development version of Jitsu, you can pin Jitsu to the current master branch on Github. This version is *unstable* and changes frequently.
 
 ```
-$ opam pin add jitsu 'https://github.com/mirage/jitsu.git'
+$ opam pin add jitsu --dev
 $ opam install jitsu
 ```
 
@@ -148,7 +147,7 @@ rumprun_config=tmp/json.cfg
 
 Verify that the unikernel boots in Jitsu by running `host www.example.org 127.0.0.1`. An nginx web server should now be running in a rumprun unikernel on IP 10.0.0.1.
 
-Note that rumprun unikernels currently take longer to boot than MirageOS unikernels. When the disks are mounted as ISO files (as in this example) the boot time can be more than a second. The `-d` parameter can be used to delay the DNS response to compensate for this. See `jitsu --help` for a full list of available options.
+Note that rumprun unikernels currently have to wait for the disk images to be configured by Xen. When the disks are mounted as ISO files (as in this example) the total boot time can be more than a second. An alternative is to use `losetup` to create loopback devices that map to the ISO files. The `-d` parameter can also be used to delay the DNS response to compensate for this. See `jitsu --help` for a full list of available options.
 
 ### Linux VMs in Virtualbox ###
 Jitsu can be used to control VMs in Virtualbox with libvirt. Note that how well this will work depends on how quickly the VM is able to respond to requests after resuming from suspend (see also the `-d` parameter for how to delay the DNS response).
