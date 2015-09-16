@@ -211,7 +211,7 @@ let jitsu backend connstr bindaddr bindport forwarder forwardport response_delay
            let add_with_config config_array = (
              let vm_config = (Hashtbl.create (Array.length config_array)) in
              (Array.iter (fun (k,v) -> Hashtbl.add vm_config k v) config_array); (* Use .add to support multiple values per parameter name *)
-             let dns_name = Options.get_dns_name vm_config "dns" in
+             let dns_names = Options.get_dns_name_list vm_config "dns" in
              let vm_name = Options.get_str vm_config "name" in
              let vm_ip = Options.get_ipaddr vm_config "ip" in
              let response_delay =  (* override default response_delay if key set in config *)
@@ -230,16 +230,18 @@ let jitsu backend connstr bindaddr bindport forwarder forwardport response_delay
                | `Error _ -> None
                | `Ok v -> Some v
              in
-             match dns_name, vm_name, vm_ip with
+             match dns_names, vm_name, vm_ip with
              | `Error e, _, _
              | _, `Error e, _
              | _, _, `Error e -> raise (Failure (Options.string_of_error e))
-             | `Ok dns_name, `Ok vm_name, `Ok vm_ip -> begin
+             | `Ok dns_names, `Ok vm_name, `Ok vm_ip -> begin
                  match (Ipaddr.to_v4 vm_ip) with
                  | None -> raise (Failure (Printf.sprintf "Only IPv4 is supported. %s is not a valid IPv4 address." (Ipaddr.to_string vm_ip)))
                  | Some vm_ip -> begin
-                     log (Printf.sprintf "Adding domain '%s' for VM '%s' with ip %s" (Dns.Name.to_string dns_name) vm_name (Ipaddr.V4.to_string vm_ip));
-                     or_abort (fun () -> Jitsu.add_vm t ~dns_names:[dns_name] ~vm_ip ~vm_stop_mode ~response_delay ~wait_for_key ~use_synjitsu ~dns_ttl:ttl ~vm_config)
+                     List.iter (fun dns_name ->
+                         log (Printf.sprintf "Adding domain '%s' for VM '%s' with ip %s" (Dns.Name.to_string dns_name) vm_name (Ipaddr.V4.to_string vm_ip)))
+                         dns_names;
+                     or_abort (fun () -> Jitsu.add_vm t ~dns_names:dns_names ~vm_ip ~vm_stop_mode ~response_delay ~wait_for_key ~use_synjitsu ~dns_ttl:ttl ~vm_config)
                    end
                end
            ) in
