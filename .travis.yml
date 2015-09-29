@@ -6,5 +6,6 @@ env:
   global:
   - ALCOTEST_SHOW_ERRORS=1
   - PACKAGE=jitsu
+  - UBUNTU_TRUSTY=1
   matrix:
   - OCAML_VERSION=4.01
