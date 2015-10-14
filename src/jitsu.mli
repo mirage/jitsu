@@ -25,15 +25,16 @@
     automatically stopped. *)
 
 module Make :
-  functor (Backend : Backends.VM_BACKEND) ->
+  functor (Vm_backend : Backends.VM_BACKEND) ->
+  functor (Storage_backend : Backends.STORAGE_BACKEND) ->
   sig
     type t
     (** The type of Jitsu states. *)
 
-    val create: Backend.t -> (string -> unit) -> Dns_resolver_unix.t option -> ?synjitsu:(Uuidm.t option) -> ?persistdb:(string option) -> unit -> t Lwt.t
+    val create: Vm_backend.t -> (string -> unit) -> Dns_resolver_unix.t option -> ?synjitsu:(Uuidm.t option) -> ?persistdb:(string option) -> unit -> t Lwt.t
     (** [create backend log_function resolver vm_count use_synjitsu] creates a new Jitsu instance,
         where vm_count is the initial size of the hash table and use_synjitsu is the optional
-        name or uuid of a synjitsu unikernel. *)
+        name or uuid of a synjitsu unikernel. If persistdb is set the database will be stored in the specified path.*)
 
     val process: t ->
       src:Dns_server.ip_endpoint ->
@@ -49,7 +50,7 @@ module Make :
       response_delay:float ->
       wait_for_key:string option ->
       use_synjitsu:bool ->
-      vm_config:(string, string) Hashtbl.t ->
+      vm_config:Backends.config ->
       unit Lwt.t
     (** [add_vm t vm_name vm_stop_mode dns_name dns_ip dns_ttl response_delay vm_config] adds a VM to be
         monitored by jitsu.  FIXME. *)
@@ -63,5 +64,5 @@ module Make :
 
     val output_stats: t -> ?vm_uuids:(Uuidm.t list option) -> unit -> unit Lwt.t
     (** Output stats for a list of UUIDs *)
-
   end
+
