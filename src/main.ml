@@ -165,17 +165,18 @@ let backend =
 
 let jitsu backend connstr bindaddr bindport forwarder forwardport response_delay
     map_domain ttl vm_stop_mode synjitsu_domain_uuid persistdb =
-  let (module B) =
-    if backend = `Libvirt then
-      (module Libvirt_backend : Backends.VM_BACKEND)
-    else if backend = `Xapi then
-      (module Xapi_backend : Backends.VM_BACKEND)
-    else if backend = `Libxl then
-      (module Libxl_backend : Backends.VM_BACKEND)
-    else
-      (module Libvirt_backend)
+  let (module Vm_backend : Backends.VM_BACKEND) =
+    match backend with
+    | `Libvirt -> (module Libvirt_backend)
+    | `Xapi -> (module Xapi_backend)
+    | `Libxl -> (module Libxl_backend)
   in
-  let module Jitsu = Jitsu.Make(B) in
+  let (module Storage_backend : Backends.STORAGE_BACKEND) = 
+    match persistdb with
+    | None -> (module Irmin_backend.Make(Irmin_unix.Irmin_git.Memory))
+    | Some _ -> (module Irmin_backend.Make(Irmin_unix.Irmin_git.FS))
+  in
+  let module Jitsu = Jitsu.Make(Vm_backend)(Storage_backend) in
   let rec maintenance_thread t timeout =
     Lwt_unix.sleep timeout >>= fun () ->
     Printf.printf "%s%!" ".";
@@ -201,7 +202,7 @@ let jitsu backend connstr bindaddr bindport forwarder forwardport response_delay
        | Some s -> Uuidm.of_string s
        | None -> None
      in
-     B.connect ~connstr () >>= fun r ->
+     Vm_backend.connect ~connstr () >>= fun r ->
      match r with
      | `Error e -> raise (Failure (Printf.sprintf "Unable to connect to backend: %s" (Jitsu.string_of_error e)))
      | `Ok backend_t ->
@@ -240,7 +241,7 @@ let jitsu backend connstr bindaddr bindport forwarder forwardport response_delay
                  | Some vm_ip -> begin
                      List.iter (fun dns_name ->
                          log (Printf.sprintf "Adding domain '%s' for VM '%s' with ip %s" (Dns.Name.to_string dns_name) vm_name (Ipaddr.V4.to_string vm_ip)))
-                         dns_names;
+                       dns_names;
                      or_abort (fun () -> Jitsu.add_vm t ~dns_names:dns_names ~vm_ip ~vm_stop_mode ~response_delay ~wait_for_key ~use_synjitsu ~dns_ttl:ttl ~vm_config)
                    end
                end
