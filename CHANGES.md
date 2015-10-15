@@ -1,5 +1,13 @@
-0.2
-General
+0.2.1 (2015-15-10)
+
+- Add/fix support for multiple DNS entries per VM
+- Update storage backend to support latest Irmin API (0.10.0)
+- Add VERSION file to track version in builds and releases
+- Update README with links to paper and recent blog posts
+
+0.2 (2015-17-08)
+
+General:
 - Add support for rumprun unikernels in libxl backend (rumprun_config option)
 - New configuration syntax with key/value pairs
 - VMs are now destroyed by default (was suspend, can be changed with -m)
@@ -7,12 +15,12 @@ General
 - Support for setting fixed response delay per domain (response_delay option, overrides -d)
 - Support more than one DNS name per VM
 
-Storage
+Storage:
 - All storage functionality moved to separate storage module
 - Irmin in-memory storage backend to store internal state
 - Add --persistdb parameter to persist Irmin db to disk
 
-Synjitsu
+Synjitsu:
 - Add --synjitsu parameter to connect to Synjitsu
 - Support for optionally updating synjitsu with the MAC address of newly booted unikernels
 - Support for enabling/disabling synjitsu per domain (use_synjitsu option)
