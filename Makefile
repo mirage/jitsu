@@ -16,12 +16,17 @@ TEST_INCLUDE=-I $(SRC)
 PWD=$(shell pwd)
 BIN=$(PWD)/bin
 INSTALLDIR=/usr/local/bin
+VERSION=$(shell cat VERSION)
+VERSION_ML=$(SRC)/jitsu_version.ml
 
 all: $(BIN)/jitsu
 
-$(BIN)/jitsu: $(addprefix $(SRC)/, $(FILES)) $(addprefix $(SRC)/, $(MAIN))
+$(VERSION_ML): VERSION
+	echo 'let current="$(VERSION)"' > $(VERSION_ML)
+
+$(BIN)/jitsu: $(addprefix $(SRC)/, $(FILES)) $(addprefix $(SRC)/, $(MAIN)) $(VERSION_ML)
 	mkdir -p $(BIN)
-	cd $(SRC) ; ocamlfind $(OCAMLOPT) $(INCLUDE) $(PACKAGES) $(OPT) $(FILES) $(MAIN) -o $(BIN)/jitsu -syntax camlp4o
+	cd $(SRC) ; ocamlfind $(OCAMLOPT) $(INCLUDE) $(PACKAGES) $(OPT) $(VERSION_ML) $(FILES) $(MAIN) -o $(BIN)/jitsu -syntax camlp4o
 
 $(BIN)/test: $(BIN)/jitsu $(addprefix $(TEST_SRC)/, $(TEST_FILES)) $(addprefix $(TEST_SRC)/, $(TEST_MAIN))
 	cd $(TEST_SRC) ; ocamlfind $(OCAMLOPT) $(TEST_INCLUDE) $(TEST_PACKAGES) $(OPT) $(addprefix $(SRC)/, $(FILES)) $(TEST_FILES) $(TEST_MAIN) -o $(BIN)/test -syntax camlp4o
@@ -31,7 +36,7 @@ test: $(BIN)/test
 	$(BIN)/test
 
 install: $(BIN)/jitsu
-	@echo "Installing jitsu in $(INSTALLDIR)..."
+	@echo "Installing jitsu $(VERSION) in $(INSTALLDIR)..."
 	install -s $(BIN)/jitsu $(INSTALLDIR)/jitsu
 
 clean:
