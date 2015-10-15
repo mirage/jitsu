@@ -16,6 +16,12 @@ Jitsu supports several backends to manage the unikernel VMs. Currently [libvirt]
 
 [![Build Status](https://travis-ci.org/mirage/jitsu.svg)](https://travis-ci.org/mirage/jitsu)
 
+## Further reading ##
+ - [Just-in-Time Summoning of Unikernels (v0.2)](http://www.skjegstad.com/blog/2015/08/17/jitsu-v02/). A more detailed description of how Jitsu works, highlighting some of the new features in v0.2.
+ - [Jitsu: Just-In-Time Summoning of Unikernels](https://www.usenix.org/system/files/conference/nsdi15/nsdi15-paper-madhavapeddy.pdf) (by A. Madhavapeddy et al). Research paper describing the first version of Jitsu and how we used it to boot unikernel services in milliseconds on ARM-based [Cubieboards](https://en.wikipedia.org/wiki/Cubieboard).
+ - [Towards Heroku for Unikernels: Part 2 - Self Scaling Systems](http://amirchaudhry.com/heroku-for-unikernels-pt2/). Blog post by Amir Chaudhry describing how tools like Jitsu and unikernels can be used to build demand driven clouds.
+ - [A unikernel experiment: A VM for every URL](http://www.skjegstad.com/blog/2015/03/25/mirageos-vm-per-url-experiment/). Experimenting with running a separate unikernel per URL.
+
 #### Overview ####
 
  - [Installing Jitsu](#installing-jitsu)
