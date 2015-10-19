@@ -1,4 +1,8 @@
-0.2.1 (2015-15-10)
+0.2.2 (2015-15-19)
+
+- Support xenctrl > 0.9.26
+
+0.2.1 (2015-15-19)
 
 - Add/fix support for multiple DNS entries per VM
 - Update storage backend to support latest Irmin API (0.10.0)
