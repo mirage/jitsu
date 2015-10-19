@@ -43,6 +43,7 @@ clean:
 	cd $(SRC) ; rm -f $(addsuffix .cmi,$(basename $(FILES))) $(addsuffix .cmx,$(basename $(FILES))) $(addsuffix .o,$(basename $(FILES)))
 	cd $(SRC) ; rm -f $(addsuffix .cmi,$(basename $(MAIN))) $(addsuffix .cmx,$(basename $(MAIN))) $(addsuffix .o,$(basename $(MAIN)))
 	cd $(SRC) ; rm -f jitsu *~ tags
+	cd $(SRC) ; rm -f $(VERSION_ML)
 	cd $(BIN) ; rm -f jitsu test
 	cd $(TEST_SRC) ; rm -f $(addsuffix .cmi,$(basename $(TEST_FILES))) $(addsuffix .cmx,$(basename $(TEST_FILES))) $(addsuffix .o,$(basename $(TEST_FILES)))
 	cd $(TEST_SRC) ; rm -f $(addsuffix .cmi,$(basename $(TEST_MAIN))) $(addsuffix .cmx,$(basename $(TEST_MAIN))) $(addsuffix .o,$(basename $(TEST_MAIN)))
