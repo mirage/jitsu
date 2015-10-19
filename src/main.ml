@@ -52,7 +52,7 @@ let info =
       `P "Magnus Skjegstad <magnus@skjegstad.com>" ;
       `S "BUGS";
       `P "Submit bug reports to http://github.com/mirage/jitsu";] in
-  Term.info "jitsu" ~version:"0.2-alpha" ~doc ~man
+  Term.info "jitsu" ~version:Jitsu_version.current ~doc ~man
 
 let bindaddr =
   let doc = "Bind local DNS server to interface with this IP" in
