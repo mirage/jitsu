@@ -48,6 +48,7 @@ let parse_uuid_exn uuid =
 let define_vm t ~name_label ~pV_kernel =
   try_xapi "Unable to define vm" (fun () ->
       let (rpc, session_id) = t.connection in
+      (* See also documentation here https://xapi-project.github.io/xen-api/classes/vm.html *)
       lwt vm = VM.create ~rpc ~session_id
           ~name_label ~name_description:"" ~user_version:0L
           ~is_a_template:false
@@ -71,6 +72,8 @@ let define_vm t ~name_label ~pV_kernel =
           ~protection_policy:"OpaqueRef:NULL"
           ~is_snapshot_from_vmpp:false
           ~appliance:"OpaqueRef:NULL"
+          ~generation_id:"0.0"
+          ~hardware_platform_version:0L
           ~start_delay:0L ~shutdown_delay:0L ~order:0L ~suspend_SR:"OpaqueRef:NULL" ~version:0L in
       lwt net = Network.get_by_name_label ~rpc ~session_id ~label:"Pool-wide network associated with eth0" in
       lwt vif = VIF.create ~rpc:rpc ~session_id:session_id
@@ -96,7 +99,7 @@ let connect ?log_f:(log_f=default_log) ?connstr () =
         let user = match Uri.user uri with | Some u -> u | None -> "root" in
         let pass = match Uri.host uri with | Some h -> h | None -> "" in
         let rpc = if !json then make_json host else make host in
-        lwt session_id = Session.login_with_password ~rpc ~uname:user ~pwd:pass ~version:"1.0" in
+        lwt session_id = Session.login_with_password ~rpc ~uname:user ~pwd:pass ~version:"1.0" ~originator:"jitsu" in
         Lwt.return { connection = (rpc, session_id) ; log_f }
       )
 

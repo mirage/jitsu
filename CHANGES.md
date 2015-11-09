@@ -1,6 +1,7 @@
 0.2.2 (2015-15-19)
 
 - Support xenctrl > 0.9.26
+- Support xen-api-client > 0.9.8
 
 0.2.1 (2015-15-19)
 
