@@ -17,6 +17,9 @@
 open Lwt
 open Cmdliner
 
+let add_backend_support_msg =
+    "Install `libvirt`, `xen-api-client` (xapi) or `xenctrl` (libxl) with opam to add the corresponding backend."
+
 let info =
   let doc =
     "Just-In-Time Summoning of Unikernels. Jitsu is a forwarding DNS server \
@@ -34,11 +37,23 @@ let info =
     [ ("response_delay", "Override default DNS query response delay for this unikernel. See also -d.") ;
       ("wait_for_key", "Wait for this key to appear in Xenstore before responding to the DNS query. Sleeps for [response_delay] after the key appears. The key should be relative to /local/domain/[domid]/.") ;
       ("use_synjitsu", "Enable Synjitsu for this domain if not 0 or absent (requires Synjitsu support enabled)") ] in
+  let backend_options name = 
+      match Vm_backends.lookup name with
+      | None -> [] (* Only include options if compiled in *)
+      | Some (module M : Backends.VM_BACKEND)-> 
+                  [`S (Printf.sprintf "%s CONFIGURATION" (String.uppercase name)) ] @ 
+                  (list_options M.get_config_option_list)
+  in
   let man =
+    [ `S "BACKENDS" ;
+      `P "Jitsu can use different backends to control unikernel VMs (or processes). Support for libvirt, xapi and libxl will \
+          be enabled if the libraries are available. Note that Xapi and libxl support are less tested and should be considered \
+          experimental." ;
+      `P add_backend_support_msg ] @
     [ `S "COMMON CONFIGURATION" ] @ (list_options common_options) @
-    [ `S "LIBVIRT CONFIGURATION" ] @ (list_options Libvirt_backend.get_config_option_list) @
-    [ `S "XAPI CONFIGURATION" ] @ (list_options Xapi_backend.get_config_option_list) @
-    [ `S "LIBXL CONFIGURATION" ] @ (list_options Libxl_backend.get_config_option_list) @
+    backend_options "libvirt" @
+    backend_options "xapi" @
+    backend_options "libxl" @
     [ `S "EXAMPLES";
       `P "$(b,jitsu -c xen:/// -f 8.8.8.8 dns=mirage.io,ip=10.0.0.1,vm=mirage-www)" ;
       `P "Connect to Xen via libvirt. Start unikernel $(b,mirage-www) on requests for $(b,mirage.io) and \
@@ -64,7 +79,7 @@ let bindport =
 
 let connstr =
   let doc =
-    "Libvirt and Xapi connection string (e.g. xen+ssh://x.x.x.x/system or vbox:///session)"
+    "Libvirt or Xapi connection string (e.g. xen+ssh://x.x.x.x/system or vbox:///session)"
   in
   Arg.(value & opt string "xen:///" & info ["c"; "connect"] ~docv:"CONNECT" ~doc)
 
@@ -154,22 +169,44 @@ let or_warn_lwt msg f =
   | e -> (log (Printf.sprintf "Warning: Unhandled exception: %s" (Printexc.to_string e))); Lwt.return_unit
 
 let backend =
+  let type_if_exists n t =
+     match Vm_backends.lookup n with
+     | None -> []
+     | Some _ -> [(n, t)]
+  in
+  let backends =
+      type_if_exists "libvirt" `Libvirt @
+      type_if_exists "libxl" `Libxl @
+      type_if_exists "xapi" `Xapi
+  in
+  let backend_names = 
+      String.concat ", " (List.map (fun t -> let n, _ = t in n) backends)
+  in
+  let default = 
+      try
+          let _, t = List.hd backends in
+          t
+      with
+      | Failure _ -> raise (Failure (Printf.sprintf "No backend support compiled in. %s" add_backend_support_msg))
+  in
   let doc =
-    "Which backend to use. Currently libvirt, xapi and libxl are supported. Xapi and libxl \
-     are less tested and should be considered experimental." in
-  Arg.(value & opt (enum [("libvirt" , `Libvirt);
-                          ("libxl", `Libxl);
-                          ("xapi", `Xapi)])
-         `Libvirt & info ["x" ; "backend" ] ~docv:"BACKEND" ~doc)
+    (Printf.sprintf 
+     "Which backend to use. This version is compiled with support for: $(b,%s)." backend_names) in
+  Arg.(value & opt (enum backends) default & info ["x" ; "backend" ] ~docv:"BACKEND" ~doc)
 
 
 let jitsu backend connstr bindaddr bindport forwarder forwardport response_delay
     map_domain ttl vm_stop_mode synjitsu_domain_uuid persistdb =
   let (module Vm_backend : Backends.VM_BACKEND) =
+    let lookup_or_fail name =
+        match Vm_backends.lookup name with
+        | None -> raise (Failure (Printf.sprintf "Support for backend '%s' not enabled in this version of jitsu. Install the backend with opam and try again." name))
+        | Some (module M : Backends.VM_BACKEND) -> (module M : Backends.VM_BACKEND)
+    in
     match backend with
-    | `Libvirt -> (module Libvirt_backend)
-    | `Xapi -> (module Xapi_backend)
-    | `Libxl -> (module Libxl_backend)
+    | `Libvirt -> lookup_or_fail "libvirt"
+    | `Xapi -> lookup_or_fail "xapi"
+    | `Libxl -> lookup_or_fail "libxl"
   in
   let (module Storage_backend : Backends.STORAGE_BACKEND) = 
     match persistdb with

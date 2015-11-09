@@ -6,18 +6,28 @@ homepage: "https://github.com/mirage/jitsu"
 bug-reports: "https://github.com/mirage/jitsu/issues/"
 dev-repo: "https://github.com/mirage/jitsu.git"
 license: "ISC"
+
 build: [
+  ["./configure"
+      "--%{xen-api-client:enable}%-xapi"
+      "--%{xenctrl:enable}%-xenctrl"
+      "--%{libvirt:enable}%-libvirt" ]
   [make]
 ]
+
 build-test: [
+  ["./configure"
+      "--%{xen-api-client:enable}%-xapi"
+      "--%{xenctrl:enable}%-xenctrl"
+      "--%{libvirt:enable}%-libvirt" ]
   [make "test"]
 ]
+
 depends: [  "lwt"
             "dns"  { >= "0.15.3" }
             "xenstore"
             "xenstore_transport"
             "cmdliner"
-            "libvirt"
             "ipaddr"
             "ezxmlm"
             "conduit"
@@ -26,11 +36,16 @@ depends: [  "lwt"
             "irmin-unix"
             "irmin" { >= "0.10.0" }
             "git"
-            "xen-api-client" { >= "0.9.10" }
-            "xenctrl" { >= "0.9.29" }
             "alcotest" ]
-depexts: [
-  [["debian"] ["libvirt-bin" "libvirt-dev" "libxen-dev"]]
-  [["ubuntu"] ["libvirt-bin" "libvirt-dev" "libxen-dev"]]
-  [["osx" "homebrew"] ["libvirt"]]
+
+depopts: [
+    "xenctrl"
+    "xen-api-client"
+    "libvirt"
 ]
+
+conflicts: [
+    "xenctrl" { < "0.9.29" }
+    "xen-api-client"  { < "0.9.10" }
+]
+

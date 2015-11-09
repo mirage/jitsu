@@ -14,156 +14,163 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  *)
 
-type t = {
-  connection : Libvirt.rw Libvirt.Connect.t; (* Libvirt connection *)
-  log_f : string -> unit;
-}
+module Make = struct 
 
-exception Invalid_config of string
+  type t = {
+    connection : Libvirt.rw Libvirt.Connect.t; (* Libvirt connection *)
+    log_f : string -> unit;
+  }
 
-let try_libvirt msg f =
-  try
-    Lwt.return (`Ok (f () ))
-  with
-  | Invalid_config msg -> Lwt.return (`Error (`Invalid_config msg))
-  | Not_found -> Lwt.return (`Error (`Unknown "Uncaught Not_found exception (internal error)"))
-  | Libvirt.Virterror e -> Lwt.return (`Error (`Unknown (Printf.sprintf "%s: %s" msg (Libvirt.Virterror.to_string e))))
+  exception Invalid_config of string
 
-let default_log s =
-  Printf.printf "libvirt_backend: %s\n" s
+  let try_libvirt msg f =
+    try
+      Lwt.return (`Ok (f () ))
+    with
+    | Invalid_config msg -> Lwt.return (`Error (`Invalid_config msg))
+    | Not_found -> Lwt.return (`Error (`Unknown "Uncaught Not_found exception (internal error)"))
+    | Libvirt.Virterror e -> Lwt.return (`Error (`Unknown (Printf.sprintf "%s: %s" msg (Libvirt.Virterror.to_string e))))
 
-let connect ?log_f:(log_f=default_log) ?connstr () =
-  match connstr with
-  | None -> Lwt.return (`Error (`Unable_to_connect "Empty connect string"))
-  | Some uri ->
-    let error_msg =
-      Printf.sprintf "Unable to connect to Libvirt backend. Verify that the connect string is correct (%s) and that you have the right permissions." (Uri.to_string uri)
-    in
-    try_libvirt error_msg (fun () ->
-        { connection = Libvirt.Connect.connect ~name:(Uri.to_string uri) () ; log_f }
+  let default_log s =
+    Printf.printf "libvirt_backend: %s\n" s
+
+  let connect ?log_f:(log_f=default_log) ?connstr () =
+    match connstr with
+    | None -> Lwt.return (`Error (`Unable_to_connect "Empty connect string"))
+    | Some uri ->
+      let error_msg =
+        Printf.sprintf "Unable to connect to Libvirt backend. Verify that the connect string is correct (%s) and that you have the right permissions." (Uri.to_string uri)
+      in
+      try_libvirt error_msg (fun () ->
+          { connection = Libvirt.Connect.connect ~name:(Uri.to_string uri) () ; log_f }
+        )
+
+  (* convert vm state to string *)
+  let libvirt_state_to_vm_state = function
+    | Libvirt.Domain.InfoNoState
+    | Libvirt.Domain.InfoBlocked
+    | Libvirt.Domain.InfoCrashed -> Vm_state.Unknown
+    | Libvirt.Domain.InfoRunning -> Vm_state.Running
+    | Libvirt.Domain.InfoPaused -> Vm_state.Paused
+    | Libvirt.Domain.InfoShutdown
+    | Libvirt.Domain.InfoShutoff -> Vm_state.Off
+
+  let parse_uuid_exn uuid =
+    match (Uuidm.of_string uuid) with
+    | None -> raise (Invalid_config (Printf.sprintf "unable to parse UUID %s" uuid))
+    | Some uuid -> uuid
+
+  let configure_vm t config =
+    (* Tries to find the UUID for the VM config
+       - Fails if both name and uuid are missing
+       - Fails if uuid is missing and unable to lookup name
+       - Fails if uuid is specified and unable to lookup uuid *)
+    try_libvirt "Unable to configure VM" (fun () ->
+        let uuid = Options.get_str config "uuid" in
+        let name = Options.get_str config "name" in
+        match uuid,name with
+        | `Ok uuid,_ -> begin (* uuid set, parse and check *)
+            let uuidm = parse_uuid_exn uuid in
+            let domain = Libvirt.Domain.lookup_by_uuid t.connection (Uuidm.to_bytes uuidm) in
+            let uuidb = Libvirt.Domain.get_uuid_string domain in
+            parse_uuid_exn uuidb
+          end
+        | `Error `Required_key_not_found _,`Ok name -> begin (* uuid not set, try to lookup name *)
+            let domain = Libvirt.Domain.lookup_by_name t.connection name in
+            let uuid = parse_uuid_exn (Libvirt.Domain.get_uuid_string domain) in
+            uuid
+          end
+        | `Error `Required_key_not_found _,`Error e -> raise (Invalid_config (Printf.sprintf "Error reading name: %s" (Options.string_of_error e)))
+        | `Error e, _ -> raise (Invalid_config (Printf.sprintf "Error reading UUID: %s" (Options.string_of_error e)))
       )
 
-(* convert vm state to string *)
-let libvirt_state_to_vm_state = function
-  | Libvirt.Domain.InfoNoState
-  | Libvirt.Domain.InfoBlocked
-  | Libvirt.Domain.InfoCrashed -> Vm_state.Unknown
-  | Libvirt.Domain.InfoRunning -> Vm_state.Running
-  | Libvirt.Domain.InfoPaused -> Vm_state.Paused
-  | Libvirt.Domain.InfoShutdown
-  | Libvirt.Domain.InfoShutoff -> Vm_state.Off
+  let lookup_vm_by_name t name =
+    try_libvirt "Unable lookup VM name" (fun () ->
+        let domain = Libvirt.Domain.lookup_by_name t.connection name in
+        let uuid = Libvirt.Domain.get_uuid_string domain in
+        parse_uuid_exn uuid
+      )
 
-let parse_uuid_exn uuid =
-  match (Uuidm.of_string uuid) with
-  | None -> raise (Invalid_config (Printf.sprintf "unable to parse UUID %s" uuid))
-  | Some uuid -> uuid
+  let get_state t uuid =
+    try_libvirt "Unable to get VM state" (fun () ->
+        let domain = Libvirt.Domain.lookup_by_uuid t.connection (Uuidm.to_bytes uuid) in
+        let info = Libvirt.Domain.get_info domain in
+        libvirt_state_to_vm_state info.Libvirt.Domain.state
+      )
 
-let configure_vm t config =
-  (* Tries to find the UUID for the VM config
-     - Fails if both name and uuid are missing
-     - Fails if uuid is missing and unable to lookup name
-     - Fails if uuid is specified and unable to lookup uuid *)
-  try_libvirt "Unable to configure VM" (fun () ->
-      let uuid = Options.get_str config "uuid" in
-      let name = Options.get_str config "name" in
-      match uuid,name with
-      | `Ok uuid,_ -> begin (* uuid set, parse and check *)
-          let uuidm = parse_uuid_exn uuid in
-          let domain = Libvirt.Domain.lookup_by_uuid t.connection (Uuidm.to_bytes uuidm) in
-          let uuidb = Libvirt.Domain.get_uuid_string domain in
-          parse_uuid_exn uuidb
-        end
-      | `Error `Required_key_not_found _,`Ok name -> begin (* uuid not set, try to lookup name *)
-          let domain = Libvirt.Domain.lookup_by_name t.connection name in
-          let uuid = parse_uuid_exn (Libvirt.Domain.get_uuid_string domain) in
-          uuid
-        end
-      | `Error `Required_key_not_found _,`Error e -> raise (Invalid_config (Printf.sprintf "Error reading name: %s" (Options.string_of_error e)))
-      | `Error e, _ -> raise (Invalid_config (Printf.sprintf "Error reading UUID: %s" (Options.string_of_error e)))
-    )
+  let destroy_vm t uuid =
+    try_libvirt "Unable to destroy VM" (fun () ->
+        let domain = Libvirt.Domain.lookup_by_uuid t.connection (Uuidm.to_bytes uuid) in
+        Libvirt.Domain.destroy domain
+      )
 
-let lookup_vm_by_name t name =
-  try_libvirt "Unable lookup VM name" (fun () ->
-      let domain = Libvirt.Domain.lookup_by_name t.connection name in
-      let uuid = Libvirt.Domain.get_uuid_string domain in
-      parse_uuid_exn uuid
-    )
+  let shutdown_vm t uuid =
+    try_libvirt "Unable to shutdown VM" (fun () ->
+        let domain = Libvirt.Domain.lookup_by_uuid t.connection (Uuidm.to_bytes uuid) in
+        Libvirt.Domain.shutdown domain
+      )
 
-let get_state t uuid =
-  try_libvirt "Unable to get VM state" (fun () ->
-      let domain = Libvirt.Domain.lookup_by_uuid t.connection (Uuidm.to_bytes uuid) in
-      let info = Libvirt.Domain.get_info domain in
-      libvirt_state_to_vm_state info.Libvirt.Domain.state
-    )
+  let suspend_vm t uuid =
+    try_libvirt "Unable to suspend VM" (fun () ->
+        let domain = Libvirt.Domain.lookup_by_uuid t.connection (Uuidm.to_bytes uuid) in
+        Libvirt.Domain.suspend domain
+      )
 
-let destroy_vm t uuid =
-  try_libvirt "Unable to destroy VM" (fun () ->
-      let domain = Libvirt.Domain.lookup_by_uuid t.connection (Uuidm.to_bytes uuid) in
-      Libvirt.Domain.destroy domain
-    )
+  let resume_vm t uuid =
+    try_libvirt "Unable to resume VM" (fun () ->
+        let domain = Libvirt.Domain.lookup_by_uuid t.connection (Uuidm.to_bytes uuid) in
+        Libvirt.Domain.resume domain
+      )
 
-let shutdown_vm t uuid =
-  try_libvirt "Unable to shutdown VM" (fun () ->
-      let domain = Libvirt.Domain.lookup_by_uuid t.connection (Uuidm.to_bytes uuid) in
-      Libvirt.Domain.shutdown domain
-    )
+  let unpause_vm t uuid =
+    resume_vm t uuid (* suspend/pause is the same in libvirt *)
 
-let suspend_vm t uuid =
-  try_libvirt "Unable to suspend VM" (fun () ->
-      let domain = Libvirt.Domain.lookup_by_uuid t.connection (Uuidm.to_bytes uuid) in
-      Libvirt.Domain.suspend domain
-    )
+  let pause_vm t uuid =
+    suspend_vm t uuid (* suspend/pause is the same in libvirt *)
 
-let resume_vm t uuid =
-  try_libvirt "Unable to resume VM" (fun () ->
-      let domain = Libvirt.Domain.lookup_by_uuid t.connection (Uuidm.to_bytes uuid) in
-      Libvirt.Domain.resume domain
-    )
+  let start_vm t uuid _ =
+    try_libvirt "Unable to start VM" (fun () ->
+        let domain = Libvirt.Domain.lookup_by_uuid t.connection (Uuidm.to_bytes uuid) in
+        Libvirt.Domain.create domain;
+      )
 
-let unpause_vm t uuid =
-  resume_vm t uuid (* suspend/pause is the same in libvirt *)
+  (* get mac address for domain - TODO only supports one interface *)
+  let get_mac t uuid =
+    try_libvirt "Unable to get MAC address for VM" (fun () ->
+        let domain = Libvirt.Domain.lookup_by_uuid t.connection (Uuidm.to_bytes uuid) in
+        let dom_xml_s = Libvirt.Domain.get_xml_desc domain in
+        try
+          let (_, dom_xml) = Ezxmlm.from_string dom_xml_s in
+          let (mac_attr, _) = Ezxmlm.member "domain" dom_xml |> Ezxmlm.member "devices" |> Ezxmlm.member "interface" |> Ezxmlm.member_with_attr "mac" in
+          let mac_s = Ezxmlm.get_attr "address" mac_attr in
+          match (Macaddr.of_string mac_s) with
+          | None -> []
+          | Some mac -> [mac]
+        with
+        | Not_found -> []
+        | Ezxmlm.Tag_not_found _ -> []
+      )
 
-let pause_vm t uuid =
-  suspend_vm t uuid (* suspend/pause is the same in libvirt *)
+  let get_name t uuid =
+    try_libvirt "Unable to get VM name" (fun () ->
+        let domain = Libvirt.Domain.lookup_by_uuid t.connection (Uuidm.to_bytes uuid) in
+        Some (Libvirt.Domain.get_name domain)
+      )
 
-let start_vm t uuid _ =
-  try_libvirt "Unable to start VM" (fun () ->
-      let domain = Libvirt.Domain.lookup_by_uuid t.connection (Uuidm.to_bytes uuid) in
-      Libvirt.Domain.create domain;
-    )
+  let get_domain_id t uuid =
+    try_libvirt "Unable to get VM dom id" (fun () ->
+        let domain = Libvirt.Domain.lookup_by_uuid t.connection (Uuidm.to_bytes uuid) in
+        Libvirt.Domain.get_id domain
+      )
 
-(* get mac address for domain - TODO only supports one interface *)
-let get_mac t uuid =
-  try_libvirt "Unable to get MAC address for VM" (fun () ->
-      let domain = Libvirt.Domain.lookup_by_uuid t.connection (Uuidm.to_bytes uuid) in
-      let dom_xml_s = Libvirt.Domain.get_xml_desc domain in
-      try
-        let (_, dom_xml) = Ezxmlm.from_string dom_xml_s in
-        let (mac_attr, _) = Ezxmlm.member "domain" dom_xml |> Ezxmlm.member "devices" |> Ezxmlm.member "interface" |> Ezxmlm.member_with_attr "mac" in
-        let mac_s = Ezxmlm.get_attr "address" mac_attr in
-        match (Macaddr.of_string mac_s) with
-        | None -> []
-        | Some mac -> [mac]
-      with
-      | Not_found -> []
-      | Ezxmlm.Tag_not_found _ -> []
-    )
+  let get_config_option_list =
+    [ ("name", "Name of VM defined in libvirt (ignored if uuid is set)") ;
+      ("uuid", "UUID of VM defined in libvirt (required, but optional if name is set)") ;
+      ("dns", "DNS name (required)") ;
+      ("ip", "IP to return in DNS reply (required)") ]
 
-let get_name t uuid =
-  try_libvirt "Unable to get VM name" (fun () ->
-      let domain = Libvirt.Domain.lookup_by_uuid t.connection (Uuidm.to_bytes uuid) in
-      Some (Libvirt.Domain.get_name domain)
-    )
+end
 
-let get_domain_id t uuid =
-  try_libvirt "Unable to get VM dom id" (fun () ->
-      let domain = Libvirt.Domain.lookup_by_uuid t.connection (Uuidm.to_bytes uuid) in
-      Libvirt.Domain.get_id domain
-    )
-
-let get_config_option_list =
-  [ ("name", "Name of VM defined in libvirt (ignored if uuid is set)") ;
-    ("uuid", "UUID of VM defined in libvirt (required, but optional if name is set)") ;
-    ("dns", "DNS name (required)") ;
-    ("ip", "IP to return in DNS reply (required)") ]
+let () =
+    Vm_backends.add "libvirt" (module Make : Backends.VM_BACKEND)
 

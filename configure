@@ -1,0 +1,20 @@
+#!/bin/bash
+
+echo "Searching for available backends..."
+BACKENDS=
+
+ocamlfind query libvirt && \
+    BACKENDS="${BACKENDS}\nHAS_LIBVIRT=1"
+ocamlfind query xen-api-client && \
+    BACKENDS="${BACKENDS}\nHAS_XAPI=1"
+ocamlfind query xenlight && \
+    BACKENDS="${BACKENDS}\nHAS_XL=1"
+
+if [ "${BACKENDS}" == "" ]; then
+    echo
+    echo "Warning: No VM backends found. Install xenctrl, xen-api-client or libvirt with opam to add a backend."
+    echo
+fi
+
+cat Makefile.in | sed s/%backends%/"${BACKENDS}"/g > Makefile && \
+    echo "Makefile created"
