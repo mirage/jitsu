@@ -1,20 +1,25 @@
 #!/bin/bash
 
+function remove {
+    sed -i "" -E s/$1//g Makefile
+}
+
 echo "Searching for available backends..."
 BACKENDS=
 
-ocamlfind query libvirt && \
-    BACKENDS="${BACKENDS}\nHAS_LIBVIRT=1"
-ocamlfind query xen-api-client && \
-    BACKENDS="${BACKENDS}\nHAS_XAPI=1"
-ocamlfind query xenlight && \
-    BACKENDS="${BACKENDS}\nHAS_XL=1"
+HAS_LIBVIRT=0
+HAS_XAPI=0
+HAS_XL=0
 
-if [ "${BACKENDS}" == "" ]; then
+cp Makefile.in Makefile || exit
+ocamlfind query libvirt && HAS_LIBVIRT=1 || remove "HAS_LIBVIRT=1"
+ocamlfind query xen-api-client && HAS_XAPI=1 || remove "HAS_XAPI=1"
+ocamlfind query xenlight && HAS_XL=1 || remove "HAS_XL=1"
+
+if [ "${HAS_LIBVIRT}${HAS_XAPI}${HAS_XL}" == "000" ]; then
     echo
     echo "Warning: No VM backends found. Install xenctrl, xen-api-client or libvirt with opam to add a backend."
     echo
 fi
 
-cat Makefile.in | sed s/%backends%/"${BACKENDS}"/g > Makefile && \
-    echo "Makefile created"
+echo "Makefile created"

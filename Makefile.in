@@ -15,7 +15,9 @@ MAIN_FILE=main.ml
 MAIN_FILE_PREFIX=$(addprefix $(SRC)/,$(MAIN_FILE))
 
 # Available backends detected by configure
-%backends%
+HAS_LIBVIRT=1
+HAS_XAPI=1
+HAS_XL=1
 
 # Configure backends
 ifdef HAS_LIBVIRT
