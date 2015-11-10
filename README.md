@@ -41,13 +41,20 @@ The latest release of Jitsu is available in [`opam`](https://opam.ocaml.org). To
 $ opam install jitsu
 ```
 
-When Jitsu is installed it will look for available backends that can be used to start unikernels (or processes). The backends currently supported are `xenctrl` (libxl), `libvirt` and `xen-api-client` (xapi). If a new backend is installed `opam` will also reinstall Jitsu to add support for it.
+When Jitsu is installed it will look for available backends that can be used to start unikernels (or processes). The backends currently supported are `xenctrl` (libxl), `libvirt` and `xen-api-client` (xapi). If a new backend is installed `opam` will reinstall Jitsu to add support for it.
 
-The virtual packages `jitsu-libvirt`, `jitsu-xapi` and `jitsu-xenctrl` can be used to install Jitsu with a specific backend. 
+The virtual packages `jitsu-libvirt`, `jitsu-xapi` and `jitsu-xenctrl` can be used to force Jitsu to be installed with a specific backend. 
 
-To add a backend, just install it with `opam`:
+To add a backend, either use the virtual package:
 
 ```
+$ opam install jitsu-xenctrl
+```
+
+Or install the backend directly with `opam`:
+
+```
+$ opam install jitsu
 $ opam depext xenctrl    # install external dependencies, optional
 $ opam install xenctrl
 ```
