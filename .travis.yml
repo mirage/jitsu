@@ -4,8 +4,17 @@ script: bash -ex .travis-opam.sh
 sudo: required
 env:
   global:
-  - ALCOTEST_SHOW_ERRORS=1
-  - PACKAGE=jitsu
-  - UBUNTU_TRUSTY=1
+    - ALCOTEST_SHOW_ERRORS=1
+    - PACKAGE=jitsu
+    - UBUNTU_TRUSTY=1
   matrix:
-  - OCAML_VERSION=4.01
+    - OCAML_VERSION=4.02
+    - OCAML_VERSION=4.01
+    - OCAML_VERSION=4.01 DEPOPTS="xen-api-client xenctrl libvirt"
+    - OCAML_VERSION=4.02 DEPOPTS="xen-api-client xenctrl libvirt"
+    - OCAML_VERSION=4.01 DEPOPTS="libvirt"
+    - OCAML_VERSION=4.01 DEPOPTS="xenctrl"
+    - OCAML_VERSION=4.01 DEPOPTS="xen-api-client"
+    - OCAML_VERSION=4.02 DEPOPTS="libvirt"
+    - OCAML_VERSION=4.02 DEPOPTS="xenctrl"
+    - OCAML_VERSION=4.02 DEPOPTS="xen-api-client"
