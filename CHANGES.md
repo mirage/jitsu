@@ -3,6 +3,7 @@
 - Support modular backends. Only available backends are compiled in by default.
 - Support xenctrl > 0.9.26
 - Support xen-api-client > 0.9.8
+- Add virtual packages for jitsu-libvirt, jitsu-libxl, jitsu-xapi
 
 0.2.1 (2015-15-19)
 
