@@ -22,7 +22,8 @@ build-test: [
   [make "test"]
 ]
 
-depends: [  "lwt"
+depends: [  "ocamlfind"
+            "lwt"
             "dns"  { >= "0.15.3" }
             "xenstore"
             "xenstore_transport"

@@ -15,20 +15,23 @@ MAIN_FILE=main.ml
 MAIN_FILE_PREFIX=$(addprefix $(SRC)/,$(MAIN_FILE))
 
 # Available backends detected by configure
-HAS_LIBVIRT=1
-HAS_XAPI=1
-HAS_XL=1
+HAS_LIBVIRT=$(shell ocamlfind query libvirt && echo 1 || echo 0)
+HAS_XAPI=$(shell ocamlfind query xen-api-client && echo 1 || echo 0)
+HAS_XL=$(shell ocamlfind query xenctrl && echo 1 || echo 0)
 
 # Configure backends
-ifdef HAS_LIBVIRT
+ifeq ($(HAS_LIBVIRT), 1) 
+	BACKENDS+=libvirt:
 	BACKEND_FILES += libvirt_backend.ml
 	BACKEND_PKG := $(strip $(BACKEND_PKG),libvirt)
 endif
-ifdef HAS_XAPI
+ifeq ($(HAS_XAPI), 1) 
+	BACKENDS+=xen-api-client:
 	BACKEND_FILES += xapi_backend.ml
 	BACKEND_PKG := $(strip $(BACKEND_PKG),xen-api-client,xen-api-client.lwt)
 endif
-ifdef HAS_XL
+ifeq ($(HAS_XL), 1) 
+	BACKENDS+=xenctrl:
 	BACKEND_FILES += libxl_backend.ml
 	BACKEND_PKG := $(strip $(BACKEND_PKG),xenlight,xentoollog)
 endif
@@ -52,6 +55,9 @@ $(VERSION_ML): VERSION
 	@echo 'Version $(VERSION)'
 
 $(BIN)/jitsu: $(BASE_FILES_PREFIX) $(MAIN_FILE_PREFIX) $(VERSION_ML) 
+	@[ "$(BACKEND_PKG)" == "" ] && \
+		echo "Warning: No VM backends found. Install xenctrl, xen-api-client or libvirt with opam to add a backend." || \
+		echo 'Detected backends: $(subst :, ,$(BACKENDS))'
 	mkdir -p $(BIN)
 	cd $(SRC) ; ocamlfind $(OCAMLOPT) $(INCLUDE) $(BASE_PKG) $(OPT) $(VERSION_ML) $(BASE_FILES) $(MAIN_FILE) -o $(BIN)/jitsu -syntax camlp4o
 
