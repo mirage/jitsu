@@ -7,18 +7,10 @@ dev-repo: "https://github.com/mirage/jitsu.git"
 license: "ISC"
 
 build: [
-  ["./configure"
-      "--%{xen-api-client:enable}%-xapi"
-      "--%{xenctrl:enable}%-xenctrl"
-      "--%{libvirt:enable}%-libvirt" ]
   [make]
 ]
 
 build-test: [
-  ["./configure"
-      "--%{xen-api-client:enable}%-xapi"
-      "--%{xenctrl:enable}%-xenctrl"
-      "--%{libvirt:enable}%-libvirt" ]
   [make "test"]
 ]
 
