@@ -36,7 +36,7 @@ module Make = struct
 
 
   let try_xapi msg f =
-    try_lwt
+    try%lwt
       f () >>= fun result ->
       Lwt.return (`Ok result)
     with
@@ -49,9 +49,9 @@ module Make = struct
     | Some uuid -> uuid
 
   let define_vm t ~name_label ~pV_kernel =
-    try_xapi "Unable to define vm" (fun () ->
+    let helper = (fun () ->
         let (rpc, session_id) = t.connection in
-        lwt vm = VM.create ~rpc ~session_id
+        let%lwt vm = VM.create ~rpc ~session_id
             ~name_label ~name_description:"" ~user_version:0L
             ~is_a_template:false
             ~affinity:"OpaqueRef:NULL"
@@ -77,13 +77,14 @@ module Make = struct
             ~generation_id:"0.0"
             ~hardware_platform_version:0L
             ~start_delay:0L ~shutdown_delay:0L ~order:0L ~suspend_SR:"OpaqueRef:NULL" ~version:0L in
-        lwt net = Network.get_by_name_label ~rpc ~session_id ~label:"Pool-wide network associated with eth0" in
-        lwt vif = VIF.create ~rpc:rpc ~session_id:session_id
+        let%lwt net = Network.get_by_name_label ~rpc ~session_id ~label:"Pool-wide network associated with eth0" in
+        let%lwt vif = VIF.create ~rpc:rpc ~session_id:session_id
             ~device:"0" ~network:(List.hd net) ~vM:vm ~mAC:"" ~mTU:0L
             ~other_config:[] ~qos_algorithm_type:"" ~qos_algorithm_params:[]  ~locking_mode:`network_default
             ~ipv4_allowed:[] ~ipv6_allowed:[] in
         return (vm, vif)
-      )
+      ) in
+    try_xapi "Unable to define vm" helper
 
 
   let default_log s =
@@ -101,7 +102,7 @@ module Make = struct
           let user = match Uri.user uri with | Some u -> u | None -> "root" in
           let pass = match Uri.host uri with | Some h -> h | None -> "" in
           let rpc = if !json then make_json host else make host in
-          lwt session_id = Session.login_with_password ~rpc ~uname:user ~pwd:pass ~version:"1.0" ~originator:"jitsu" in
+          let%lwt session_id = Session.login_with_password ~rpc ~uname:user ~pwd:pass ~version:"1.0" ~originator:"jitsu" in
           Lwt.return { connection = (rpc, session_id) ; log_f }
         )
 
@@ -133,14 +134,14 @@ module Make = struct
         | `Ok uuid, _ -> begin (* uuid set, parse and check *)
             let uuid = parse_uuid_exn uuid in
             let (rpc, session_id) = t.connection in
-            lwt domain = VM.get_by_uuid ~rpc:rpc ~session_id:session_id ~uuid:(Uuidm.to_string uuid) in
-            lwt uuid = VM.get_uuid ~rpc:rpc ~session_id:session_id ~self:domain in
+            let%lwt domain = VM.get_by_uuid ~rpc:rpc ~session_id:session_id ~uuid:(Uuidm.to_string uuid) in
+            let%lwt uuid = VM.get_uuid ~rpc:rpc ~session_id:session_id ~self:domain in
             Lwt.return (parse_uuid_exn uuid)
           end
         | `Error `Required_key_not_found _, `Ok name -> begin (* uuid not set, try to lookup name *)
             let (rpc, session_id) = t.connection in
-            lwt domains = VM.get_by_name_label ~rpc:rpc ~session_id:session_id ~label:name in
-            lwt uuid = VM.get_uuid ~rpc:rpc ~session_id:session_id ~self:(List.hd domains) in
+            let%lwt domains = VM.get_by_name_label ~rpc:rpc ~session_id:session_id ~label:name in
+            let%lwt uuid = VM.get_uuid ~rpc:rpc ~session_id:session_id ~self:(List.hd domains) in
             Lwt.return (parse_uuid_exn uuid)
           end
         | `Error `Required_key_not_found _, `Error e -> raise (Invalid_config (Printf.sprintf "Unable to read name: %s" (Options.string_of_error e)))
@@ -150,57 +151,57 @@ module Make = struct
   let get_state t uuid =
     try_xapi "Unable to get VM state" (fun () ->
         let (rpc, session_id) = t.connection in
-        lwt domain = VM.get_by_uuid ~rpc:rpc ~session_id:session_id ~uuid:(Uuidm.to_string uuid) in
-        lwt state = VM.get_power_state ~rpc:rpc ~session_id:session_id ~self:domain in
+        let%lwt domain = VM.get_by_uuid ~rpc:rpc ~session_id:session_id ~uuid:(Uuidm.to_string uuid) in
+        let%lwt state = VM.get_power_state ~rpc:rpc ~session_id:session_id ~self:domain in
         Lwt.return (xapi_state_to_vm_state state)
       )
 
   let destroy_vm t uuid =
     try_xapi "Unable to destroy VM" (fun () ->
         let (rpc, session_id) = t.connection in
-        lwt domain = VM.get_by_uuid ~rpc:rpc ~session_id:session_id ~uuid:(Uuidm.to_string uuid) in
+        let%lwt domain = VM.get_by_uuid ~rpc:rpc ~session_id:session_id ~uuid:(Uuidm.to_string uuid) in
         VM.destroy ~rpc:rpc ~session_id:session_id ~self:domain
       )
 
   let shutdown_vm t uuid =
     try_xapi "Unable to shutdown VM" (fun () ->
         let (rpc, session_id) = t.connection in
-        lwt domain = VM.get_by_uuid ~rpc:rpc ~session_id:session_id ~uuid:(Uuidm.to_string uuid) in
+        let%lwt domain = VM.get_by_uuid ~rpc:rpc ~session_id:session_id ~uuid:(Uuidm.to_string uuid) in
         VM.hard_shutdown ~rpc:rpc ~session_id:session_id ~vm:domain
       )
 
   let suspend_vm t uuid =
     try_xapi "Unable to suspend VM" (fun () ->
         let (rpc, session_id) = t.connection in
-        lwt domain = VM.get_by_uuid ~rpc:rpc ~session_id:session_id ~uuid:(Uuidm.to_string uuid) in
+        let%lwt domain = VM.get_by_uuid ~rpc:rpc ~session_id:session_id ~uuid:(Uuidm.to_string uuid) in
         VM.suspend ~rpc:rpc ~session_id:session_id ~vm:domain
       )
 
   let pause_vm t uuid =
     try_xapi "Unable to suspend VM" (fun () ->
         let (rpc, session_id) = t.connection in
-        lwt domain = VM.get_by_uuid ~rpc:rpc ~session_id:session_id ~uuid:(Uuidm.to_string uuid) in
+        let%lwt domain = VM.get_by_uuid ~rpc:rpc ~session_id:session_id ~uuid:(Uuidm.to_string uuid) in
         VM.pause ~rpc:rpc ~session_id:session_id ~vm:domain
       )
 
   let unpause_vm t uuid = (* from pause state *)
     try_xapi "Unable to resume VM" (fun () ->
         let (rpc, session_id) = t.connection in
-        lwt domain = VM.get_by_uuid ~rpc:rpc ~session_id:session_id ~uuid:(Uuidm.to_string uuid) in
+        let%lwt domain = VM.get_by_uuid ~rpc:rpc ~session_id:session_id ~uuid:(Uuidm.to_string uuid) in
         VM.unpause ~rpc:rpc ~session_id:session_id ~vm:domain
       )
 
   let resume_vm t uuid = (* from suspended state *)
     try_xapi "Unable to unsuspend VM" (fun () ->
         let (rpc, session_id) = t.connection in
-        lwt domain = VM.get_by_uuid ~rpc:rpc ~session_id:session_id ~uuid:(Uuidm.to_string uuid) in
+        let%lwt domain = VM.get_by_uuid ~rpc:rpc ~session_id:session_id ~uuid:(Uuidm.to_string uuid) in
         VM.resume ~rpc:rpc ~session_id:session_id ~vm:domain ~start_paused:false ~force:true
       )
 
   let start_vm t uuid _ =
     try_xapi "Unable to start VM" (fun () ->
         let (rpc, session_id) = t.connection in
-        lwt domain = VM.get_by_uuid ~rpc:rpc ~session_id:session_id ~uuid:(Uuidm.to_string uuid) in
+        let%lwt domain = VM.get_by_uuid ~rpc:rpc ~session_id:session_id ~uuid:(Uuidm.to_string uuid) in
         VM.start ~rpc:rpc ~session_id:session_id ~vm:domain ~start_paused:false ~force:true
       )
 
@@ -208,10 +209,10 @@ module Make = struct
   let get_mac t uuid =
     try_xapi "Unable to get MAC address for VM" (fun () ->
         let (rpc, session_id) = t.connection in
-        lwt domain = VM.get_by_uuid ~rpc:rpc ~session_id:session_id ~uuid:(Uuidm.to_string uuid) in
-        lwt all_vifs = VM.get_VIFs ~rpc:rpc ~session_id:session_id ~self:domain in
+        let%lwt domain = VM.get_by_uuid ~rpc:rpc ~session_id:session_id ~uuid:(Uuidm.to_string uuid) in
+        let%lwt all_vifs = VM.get_VIFs ~rpc:rpc ~session_id:session_id ~self:domain in
         let vif = List.hd all_vifs in (* TODO only supports one interface *)
-        lwt mac = VIF.get_MAC ~rpc:rpc ~session_id:session_id ~self:vif in
+        let%lwt mac = VIF.get_MAC ~rpc:rpc ~session_id:session_id ~self:vif in
         match (Macaddr.of_string mac) with
         | None -> Lwt.return []
         | Some mac -> Lwt.return [mac]
@@ -220,7 +221,7 @@ module Make = struct
   let get_name t uuid =
     try_xapi "Unable to get VM name" (fun () ->
         let (rpc, session_id) = t.connection in
-        lwt domain = VM.get_by_uuid ~rpc:rpc ~session_id:session_id ~uuid:(Uuidm.to_string uuid) in
+        let%lwt domain = VM.get_by_uuid ~rpc:rpc ~session_id:session_id ~uuid:(Uuidm.to_string uuid) in
         VM.get_name_label ~rpc:rpc ~session_id:session_id ~self:domain >>= fun name ->
         Lwt.return (Some name)
       )
@@ -228,8 +229,8 @@ module Make = struct
   let get_domain_id t uuid =
     try_xapi "Unable to get VM dom id" (fun () ->
         let (rpc, session_id) = t.connection in
-        lwt domain = VM.get_by_uuid ~rpc:rpc ~session_id:session_id ~uuid:(Uuidm.to_string uuid) in
-        lwt id = VM.get_domid ~rpc:rpc ~session_id:session_id ~self:domain in
+        let%lwt domain = VM.get_by_uuid ~rpc:rpc ~session_id:session_id ~uuid:(Uuidm.to_string uuid) in
+        let%lwt id = VM.get_domid ~rpc:rpc ~session_id:session_id ~self:domain in
         Lwt.return (Int64.to_int id)
       )
 

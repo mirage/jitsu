@@ -62,11 +62,11 @@ module Make (Backend : Backends.VM_BACKEND) = struct
 
   let connect t =
     (* TODO clean up exception mess *)
-    try_lwt
+    try%lwt
       if !(t.is_connecting) = false then
         begin
           t.is_connecting := true;
-          (try_lwt (disconnect t) with _ -> Lwt.return_unit) >>= fun () -> (* disconnect just in case, ignore result *)
+          (try%lwt (disconnect t) with _ -> Lwt.return_unit) >>= fun () -> (* disconnect just in case, ignore result *)
           Lwt_unix.sleep 1.0 >>= fun () -> (* wait, just in case *)
           t.log "synjitsu: Connecting...\n";
           or_error "synjitsu: Unable to find synjitsu VM dom id for vchan connection" (Backend.get_domain_id t.backend) t.vm_uuid >>= fun domid ->
@@ -88,7 +88,7 @@ module Make (Backend : Backends.VM_BACKEND) = struct
   let send t buf =
     match !(t.oc) with
     | None -> t.log "synjitsu: Unable to send - message dropped. Trying to connect...\n"; ignore_result (connect t); Lwt.return_unit
-    | Some oc -> try_lwt
+    | Some oc -> try%lwt
         Lwt_io.write_from_string_exactly oc (Cstruct.to_string buf) 0 (Cstruct.len buf)
       with
         End_of_file -> t.log "synjitsu: disconnected.\n" ; ignore_result (connect t); Lwt.return_unit
