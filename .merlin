@@ -15,7 +15,7 @@ PKG xenlight
 PKG uuidm
 PKG xen-api-client
 PKG alcotest
-EXT lwt
+PKG lwt.ppx
 S src/**
 S lib_test/**
 B bin
