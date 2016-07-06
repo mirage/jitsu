@@ -164,7 +164,7 @@ let or_warn msg f =
   | e -> (log (Printf.sprintf "Warning: Unhandled exception: %s" (Printexc.to_string e))); ()
 
 let or_warn_lwt msg f =
-  try_lwt f () with
+  try%lwt f () with
   | Failure m -> (log (Printf.sprintf "Warning: %s\nReceived exception: %s" msg m)); Lwt.return_unit
   | e -> (log (Printf.sprintf "Warning: Unhandled exception: %s" (Printexc.to_string e))); Lwt.return_unit
 
@@ -286,7 +286,7 @@ let jitsu backend connstr bindaddr bindport forwarder forwardport response_delay
            Lwt_list.iter_s add_with_config map_domain >>= fun () ->
            Jitsu.output_stats t () >>= fun () ->
            log (Printf.sprintf "Starting DNS server on %s:%d..." bindaddr bindport);
-           try_lwt
+           try%lwt
              let processor = ((Dns_server.processor_of_process (Jitsu.process t))
                               :> (module Dns_server.PROCESSOR)) in
              Dns_server_unix.serve_with_processor ~address:bindaddr ~port:bindport ~processor
@@ -297,7 +297,7 @@ let jitsu backend connstr bindaddr bindport forwarder forwardport response_delay
              Lwt.return_unit);
 
           (* maintenance thread, delay in seconds *)
-          (try_lwt
+          (try%lwt
              maintenance_thread t 5.0
            with
            | e -> log (Printf.sprintf "Maintenance thread exited unexpectedly with exception: %s" (Printexc.to_string e)); Lwt.return_unit

@@ -37,7 +37,7 @@ ifeq ($(HAS_XL), 1)
 endif
 
 BASE_FILES=vm_stop_mode.ml vm_state.ml xenstore.ml backends.mli vm_backends.ml options.ml rumprun.ml $(BACKEND_FILES) dns_helpers.ml irmin_backend.ml synjitsu.mli synjitsu.ml jitsu.mli jitsu.ml
-BASE_PKG=-package lwt.syntax,lwt,dns.lwt,cmdliner,ezxmlm,ipaddr,str,conduit,conduit.lwt-unix,irmin.unix,xenstore,xenstore_transport,xenstore_transport.lwt,uuidm$(BACKEND_PKG)
+BASE_PKG=-package lwt.ppx,lwt,dns.lwt,cmdliner,ezxmlm,ipaddr,str,conduit,conduit.lwt-unix,irmin.unix,xenstore,xenstore_transport,xenstore_transport.lwt,uuidm$(BACKEND_PKG)
 BASE_FILES_PREFIX=$(addprefix $(SRC)/,$(BASE_FILES))
 
 TEST_SRC=$(PWD)/lib_test
@@ -59,10 +59,10 @@ $(BIN)/jitsu: $(BASE_FILES_PREFIX) $(MAIN_FILE_PREFIX) $(VERSION_ML)
 		echo "Warning: No VM backends found. Install xenctrl, xen-api-client or libvirt with opam to add a backend." || \
 		echo 'Detected backends: $(subst :, ,$(BACKENDS))'
 	mkdir -p $(BIN)
-	cd $(SRC) ; ocamlfind $(OCAMLOPT) $(INCLUDE) $(BASE_PKG) $(OPT) $(VERSION_ML) $(BASE_FILES) $(MAIN_FILE) -o $(BIN)/jitsu -syntax camlp4o
+	cd $(SRC) ; ocamlfind $(OCAMLOPT) $(INCLUDE) $(BASE_PKG) $(OPT) $(VERSION_ML) $(BASE_FILES) $(MAIN_FILE) -o $(BIN)/jitsu
 
 $(BIN)/test: $(BIN)/jitsu $(TEST_FILES_PREFIX) $(TEST_MAIN_FILE_PREFIX)
-	cd $(TEST_SRC) ; ocamlfind $(OCAMLOPT) $(TEST_INCLUDE) $(TEST_PKG) $(OPT) $(BASE_FILES_PREFIX) $(TEST_FILES) $(TEST_MAIN_FILE) -o $(BIN)/test -syntax camlp4o
+	cd $(TEST_SRC) ; ocamlfind $(OCAMLOPT) $(TEST_INCLUDE) $(TEST_PKG) $(OPT) $(BASE_FILES_PREFIX) $(TEST_FILES) $(TEST_MAIN_FILE) -o $(BIN)/test
 
 test: $(BIN)/test
 	@echo "Running tests..."

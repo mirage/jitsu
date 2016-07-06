@@ -116,7 +116,7 @@ module Make (Vm_backend : Backends.VM_BACKEND) (Storage_backend : Backends.STORA
           match r, vm_mac with
           | Some ip, [m] -> begin
               t.log (Printf.sprintf "Notifying Synjitsu of MAC %s" (Macaddr.to_string m));
-              try_lwt
+              try%lwt
                 Synjitsu.send_garp s m ip
               with e ->
                 t.log (Printf.sprintf "Got exception %s" (Printexc.to_string e));
