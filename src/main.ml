@@ -147,7 +147,7 @@ let synjitsu_domain_uuid =
 let persistdb =
   let doc =
     "Store the Irmin database in the specified path. The default is to store the database in memory only. \
-     Note that modifying this database while Jitsu is running is currently unsupported and may crash Jitsu
+     Note that modifying this database while Jitsu is running is currently unsupported and may crash Jitsu \
      or have other unexpected results." in
   Arg.(value & opt (some string) None & info [ "persistdb" ] ~docv:"path" ~doc)
 

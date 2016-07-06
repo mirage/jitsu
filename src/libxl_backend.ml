@@ -39,9 +39,9 @@ module Make = struct
 
   let bytes_of_int_array a =
     (* TODO: Probably a better way to do this... *)
-    let s = String.create (Array.length a) in
+    let s = Bytes.create (Array.length a) in
     Array.iteri (fun i v ->
-        String.set s i (Char.chr v)) a;
+        Bytes.set s i (Char.chr v)) a;
     s
 
   let int_array_of_string a =
